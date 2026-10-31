@@ -4,20 +4,1479 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>US jobs | Crypto Trend Desk</title>
-<link rel="stylesheet" href="css/style.css">
+<style>
+/* Crypto Trend Desk: shared styles for every page. Layout: sticky page menu, then one or more cards. */
+:root {
+  --bg: #f3f5f4;
+  --surface: #ffffff;
+  --surface-2: #eaeeec;
+  --fg: #16201d;
+  --muted: #5d6b66;
+  --line: #d5dcd9;
+  --accent: #b7791f;
+  --up: #12805c;
+  --down: #c43d3d;
+  --warn: #b7791f;
+  --ema20: #b7791f;
+  --ema50: #2b6cb0;
+  --ema200: #7c4dbd;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1513; --surface: #151e1b; --surface-2: #1c2723; --fg: #e4ece8; --muted: #8fa19a; --line: #27342f;
+    --accent: #e0a63a; --up: #2fc08b; --down: #ef6b6b; --warn: #e0a63a;
+    --ema20: #e0a63a; --ema50: #5aa2f0; --ema200: #b48cf0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1513; --surface: #151e1b; --surface-2: #1c2723; --fg: #e4ece8; --muted: #8fa19a; --line: #27342f;
+  --accent: #e0a63a; --up: #2fc08b; --down: #ef6b6b; --warn: #e0a63a;
+  --ema20: #e0a63a; --ema50: #5aa2f0; --ema200: #b48cf0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-block: 16px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 20px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 12px; margin: 0 0 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+h3 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+a { color: var(--ema50); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+header.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+input, select, button {
+  font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 10px; min-width: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, tr:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button { cursor: pointer; font-weight: 500; }
+button:disabled { opacity: 0.6; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="dark"] button.primary { color: #1a1305; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) button.primary { color: #1a1305; } }
+label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+label.chk input { padding: 0; }
+.nav {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-inline: -2px; padding-inline: 2px;
+}
+.nav a { padding: 9px 12px; white-space: nowrap; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; font-weight: 500; }
+.nav a:hover { color: var(--fg); }
+.nav a[aria-current="page"] { color: var(--fg); border-bottom-color: var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.two { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.banner { padding: 10px 14px; border-radius: 6px; border: 1px solid var(--warn); color: var(--warn); background: var(--surface); font-size: 13px; }
+.status-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.price { font-size: 26px; font-weight: 600; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; border: 1px solid currentColor; white-space: nowrap; }
+.pill.up { color: var(--up); } .pill.down { color: var(--down); } .pill.warn { color: var(--warn); } .pill.mute { color: var(--muted); }
+.verdict { font-size: 22px; font-weight: 600; margin: 8px 0 2px; letter-spacing: -0.01em; }
+.verdict.up { color: var(--up); } .verdict.down { color: var(--down); } .verdict.warn { color: var(--warn); } .verdict.mute { color: var(--muted); }
+.sub { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 0; }
+.lvl { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
+.lvl small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.lvl b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 500; }
+.lvl.sl b, .lvl.res b { color: var(--down); } .lvl.tp b, .lvl.sup b { color: var(--up); }
+ul.checks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+ul.checks li { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: baseline; }
+ul.checks .mk { font-family: var(--font-mono); font-weight: 600; }
+ul.checks .ok .mk { color: var(--up); } ul.checks .no .mk { color: var(--down); }
+ul.checks .w { color: var(--muted); font-size: 12px; font-family: var(--font-mono); }
+ul.checks .d { color: var(--muted); font-size: 12px; display: block; }
+.score { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin: 6px 0 14px; }
+.score i { display: block; height: 100%; background: var(--accent); }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs button { padding: 5px 12px; font-size: 13px; }
+.tabs button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle; }
+canvas { width: 100%; display: block; }
+.tbl { overflow-x: auto; }
+.tbl.tall { max-height: 460px; overflow-y: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 600px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+td.wrapc { white-space: normal; min-width: 260px; color: var(--muted); font-size: 13px; }
+td.dots { letter-spacing: 0.1em; color: var(--accent); }
+tr[data-pair] { cursor: pointer; }
+tr[data-pair]:hover td { background: var(--surface-2); }
+tr.cur td { background: var(--surface-2); }
+.up-t { color: var(--up); } .down-t { color: var(--down); } .mute-t { color: var(--muted); } .warn-t { color: var(--warn); }
+.field { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.field label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.field input, .field select { width: 100%; }
+.kv { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+.kv:last-child { border-bottom: 0; }
+.kv span:first-child { color: var(--muted); }
+.cd { font-family: var(--font-mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+footer { color: var(--muted); font-size: 12px; max-width: 80ch; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { font-family: var(--font-mono); font-size: 12px; padding: 3px 8px; border-radius: 4px; background: var(--surface-2); }
+.chip.r { color: var(--down); } .chip.s { color: var(--up); } .chip.u { color: var(--up); } .chip.d { color: var(--down); } .chip.n { color: var(--muted); }
+.tl-row { display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: center; margin-bottom: 6px; }
+.tl-name { font-size: 13px; font-weight: 500; }
+.tl-bar { position: relative; display: grid; grid-template-columns: repeat(96, 1fr); height: 14px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.tl-bar i.on { background: var(--c); }
+.tl-bar .now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); }
+.tl-axis { display: grid; grid-template-columns: 112px 1fr; gap: 10px; font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.tl-axis div { display: flex; justify-content: space-between; }
+details summary { cursor: pointer; font-weight: 500; }
+.alog { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.alog li { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.alog li:last-child { border-bottom: 0; }
+.alog small { color: var(--muted); display: block; white-space: pre-line; }
+.sess-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0; }
+ul.news { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+ul.news li { display: grid; grid-template-columns: 78px 1fr; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+ul.news li:last-child { border-bottom: 0; }
+ul.news a { color: var(--fg); text-decoration: none; font-weight: 500; }
+ul.news a:hover { text-decoration: underline; }
+ul.news small { display: block; color: var(--muted); font-size: 12px; }
+.rules { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+.rules li { margin-bottom: 3px; }
+.tvbox { width: 100%; height: min(78vh, 720px); min-height: 420px; border-radius: 6px; overflow: hidden; background: var(--surface-2); }
+.codebox { background: var(--surface-2); border-radius: 6px; padding: 10px 12px; font-family: var(--font-mono); font-size: 12px; max-height: 280px; overflow: auto; white-space: pre; }
+.meter { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 8px 0; }
+.meter .lvl b { font-size: 13px; }
+@media (max-width: 520px) { .price { font-size: 22px; } }
+
+</style>
 </head>
 <body data-page="jobs">
 <div id="app"></div>
-<script src="js/core.js"></script>
-<script src="js/indicators.js"></script>
-<script src="js/patterns.js"></script>
-<script src="js/structure.js"></script>
-<script src="js/data.js"></script>
-<script src="js/macro.js"></script>
-<script src="js/signal.js"></script>
-<script src="js/sessions.js"></script>
-<script src="js/alerts.js"></script>
-<script src="js/shell.js"></script>
-<script src="js/page-macro.js"></script>
+<script>
+"use strict";
+/* Shared settings, storage and small helpers. Loaded first on every page. */
+const MIN_CAP = 50e6; // only coins with market cap above this are analysed
+/* Weekly is removed. Daily (show:false) is never displayed but is always used as background bias. */
+const TFS = [
+  { id: "5m", name: "5 Min", ms: 300000, k: 3, show: true, tv: "5" },
+  { id: "15m", name: "15 Min", ms: 900000, k: 3, show: true, tv: "15" },
+  { id: "1h", name: "1 Hour", ms: 3600000, k: 4, show: true, tv: "60" },
+  { id: "4h", name: "4 Hour", ms: 14400000, k: 4, show: true, tv: "240" },
+  { id: "1d", name: "Daily", ms: 86400000, k: 5, show: false, tv: "D" }
+];
+const SHOWN = TFS.filter(t => t.show);
+const WINDOWS = [50, 100]; // "last N candles" analysis windows
+const HOSTS = ["https://api.binance.com", "https://data-api.binance.vision"];
+const STABLE = new Set(["USDT","USDC","FDUSD","TUSD","DAI","USDE","PYUSD","USDP","BUSD","USD1","USDD","GUSD","EURC","EUR","AEUR","XUSD","RLUSD","BFUSD","USDS","WBTC","WBETH","STETH","WSTETH","WEETH","BETH","CBBTC"]);
+const FALLBACK = ["BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK","DOT","LTC","BCH","NEAR","UNI","ATOM","ETC","XLM","FIL","APT","ARB","OP","INJ","SUI","AAVE","HBAR","ICP","POL","TON","ALGO"];
+/* Sessions are defined in each city's own clock, so daylight saving is handled by the browser. */
+const SESSIONS = [
+  { id: "asia", name: "Asia (Tokyo)", tz: "Asia/Tokyo", from: 9, to: 18, color: "--ema50" },
+  { id: "london", name: "London (UK)", tz: "Europe/London", from: 8, to: 17, color: "--ema20" },
+  { id: "ny", name: "New York (US)", tz: "America/New_York", from: 8, to: 17, color: "--ema200" }
+];
+
+const state = {
+  symbol: "BTCUSDT", chartTf: "15m", A: {}, demo: false, sig: null,
+  uni: { list: [], map: {}, verified: false }, scan: { rows: [], at: null, running: false },
+  alerts: [], sessStats: [], prevAct: {}, news: { us: null, world: null, crypto: null }
+};
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("ctd_" + k); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("ctd_" + k, v); } catch (e) { /* ignore */ } }
+};
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const coinOf = pair => pair.replace(/USDT$/, "");
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+function fp(x) {
+  if (x == null || !isFinite(x)) return "n/a";
+  const a = Math.abs(x), d = a >= 1000 ? 2 : a >= 1 ? 3 : a >= 0.1 ? 4 : 6;
+  return x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+const fmtCap = x => x == null ? "n/a" : x >= 1e12 ? "$" + (x / 1e12).toFixed(2) + "T" : x >= 1e9 ? "$" + (x / 1e9).toFixed(1) + "B" : "$" + Math.round(x / 1e6) + "M";
+const pc = (v, d) => v == null || !isFinite(v) ? "n/a" : '<span class="' + (v >= 0 ? "up-t" : "down-t") + '">' + (v >= 0 ? "+" : "") + v.toFixed(d == null ? 2 : d) + "%</span>";
+const hhmm = ms => new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const dayTime = ms => new Date(ms).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+function fmtDur(ms) {
+  const m = Math.max(0, Math.round(ms / 60000)), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return d > 0 ? d + "d " + (h % 24) + "h" : h > 0 ? h + "h " + String(m % 60).padStart(2, "0") + "m" : m + "m";
+}
+function fmtCountdown(ms) {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(t / 86400), h = Math.floor(t % 86400 / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+  return d + "d " + String(h).padStart(2, "0") + "h " + String(m).padStart(2, "0") + "m " + String(s).padStart(2, "0") + "s";
+}
+function ago(ms) {
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  return m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago";
+}
+const dirWord = d => d === "up" ? "uptrend" : d === "down" ? "downtrend" : "range";
+function dirLabel(d) { return d === "up" ? '<span class="up-t">Up</span>' : d === "down" ? '<span class="down-t">Down</span>' : '<span class="mute-t">Sideways</span>'; }
+const arrow = d => d === "up" ? '<span class="up-t">▲</span>' : d === "down" ? '<span class="down-t">▼</span>' : '<span class="mute-t">▬</span>';
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+</script>
+<script>
+"use strict";
+/* Indicators and the per-timeframe analysis object. */
+function EMA(v, n) {
+  const out = new Array(v.length).fill(null);
+  if (v.length < n) return out;
+  let s = 0; for (let i = 0; i < n; i++) s += v[i];
+  let e = s / n; out[n - 1] = e;
+  const k = 2 / (n + 1);
+  for (let i = n; i < v.length; i++) { e = v[i] * k + e * (1 - k); out[i] = e; }
+  return out;
+}
+function SMA(v, n) {
+  const out = new Array(v.length).fill(null);
+  let s = 0;
+  for (let i = 0; i < v.length; i++) {
+    s += v[i];
+    if (i >= n) s -= v[i - n];
+    if (i >= n - 1) out[i] = s / n;
+  }
+  return out;
+}
+function RSI(v, n) {
+  n = n || 14;
+  const out = new Array(v.length).fill(null);
+  if (v.length <= n) return out;
+  let g = 0, l = 0;
+  for (let i = 1; i <= n; i++) { const d = v[i] - v[i - 1]; g += Math.max(d, 0); l += Math.max(-d, 0); }
+  g /= n; l /= n;
+  out[n] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+  for (let i = n + 1; i < v.length; i++) {
+    const d = v[i] - v[i - 1];
+    g = (g * (n - 1) + Math.max(d, 0)) / n;
+    l = (l * (n - 1) + Math.max(-d, 0)) / n;
+    out[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+  }
+  return out;
+}
+function ATR(c, n) {
+  n = n || 14;
+  const out = new Array(c.length).fill(null);
+  if (c.length <= n) return out;
+  const tr = c.map((x, i) => i === 0 ? x.h - x.l : Math.max(x.h - x.l, Math.abs(x.h - c[i - 1].c), Math.abs(x.l - c[i - 1].c)));
+  let a = 0; for (let i = 1; i <= n; i++) a += tr[i];
+  a /= n; out[n] = a;
+  for (let i = n + 1; i < c.length; i++) { a = (a * (n - 1) + tr[i]) / n; out[i] = a; }
+  return out;
+}
+/* tf is one entry of TFS. The last candle is still forming, so "closed" always means index length-2. */
+function analyze(candles, tf) {
+  const closes = candles.map(c => c.c);
+  const a = {
+    tf, candles, closes,
+    ema20: EMA(closes, 20), ema50: EMA(closes, 50), ema200: EMA(closes, 200),
+    rsi: RSI(closes, 14), atr: ATR(candles, 14), volSma: SMA(candles.map(c => c.v), 20)
+  };
+  a.swings = findSwings(a, tf.k);
+  a.struct = structureOf(a);
+  return a;
+}
+/* Simple EMA based trend. Used for the daily chart, which is kept as hidden background bias. */
+function trendOf(a) {
+  const i = a.candles.length - 2;
+  const c = a.closes[i], e20 = a.ema20[i], e50 = a.ema50[i], e200 = a.ema200[i];
+  let s = 0, max = 0;
+  if (e50 != null) { max++; s += c > e50 ? 1 : -1; }
+  if (e20 != null && e50 != null) { max++; s += e20 > e50 ? 1 : -1; }
+  if (e50 != null && e200 != null) { max++; s += e50 > e200 ? 1 : -1; }
+  if (e50 != null && i >= 5 && a.ema50[i - 5] != null) { max++; s += e50 > a.ema50[i - 5] ? 1 : -1; }
+  const dir = s >= 2 ? "up" : s <= -2 ? "down" : "side";
+  return { s, max, dir };
+}
+
+</script>
+<script>
+"use strict";
+/* Candlestick patterns, read on closed candles. bias: bull, bear or neutral. str: 1 weak to 3 strong. */
+const PAT_CODE = { "Doji": "Doji", "Dragonfly doji": "Dragon", "Gravestone doji": "Grave", "Hammer": "Hammer", "Hanging man": "Hang", "Shooting star": "Shoot", "Inverted hammer": "InvH",
+  "Bullish marubozu": "Maru", "Bearish marubozu": "Maru", "Spinning top": "Spin", "Bullish engulfing": "Engulf", "Bearish engulfing": "Engulf", "Bullish harami": "Harami", "Bearish harami": "Harami",
+  "Piercing line": "Pierce", "Dark cloud cover": "Cloud", "Tweezer bottom": "Tweez", "Tweezer top": "Tweez", "Morning star": "MStar", "Evening star": "EStar", "Three white soldiers": "3Sold", "Three black crows": "3Crow" };
+const PAT_TEXT = {
+  "Doji": "Open and close are almost the same, so buyers and sellers are balanced. The trend may pause. Wait for the next candle.",
+  "Dragonfly doji": "Long lower wick after a fall. Sellers pushed price down but buyers took it back. Can mark a bottom.",
+  "Gravestone doji": "Long upper wick after a rise. Buyers pushed price up but sellers took it back. Can mark a top.",
+  "Hammer": "Small body with a long lower wick after a fall. Sellers lost control. Stronger if the next candle closes higher.",
+  "Hanging man": "Same shape as a hammer but after a rise. Warns that buyers are weakening. Needs a red candle after it to confirm.",
+  "Shooting star": "Small body with a long upper wick after a rise. Buyers were rejected at the top. Bearish if the next candle closes lower.",
+  "Inverted hammer": "Long upper wick after a fall. Buyers tried to push up. Needs a green candle after it to confirm.",
+  "Bullish marubozu": "Strong green candle with almost no wicks. Buyers controlled the whole period.",
+  "Bearish marubozu": "Strong red candle with almost no wicks. Sellers controlled the whole period.",
+  "Spinning top": "Small body with wicks on both sides. The market is undecided.",
+  "Bullish engulfing": "A green candle fully covers the previous red one. Buyers took over. Strongest after a fall.",
+  "Bearish engulfing": "A red candle fully covers the previous green one. Sellers took over. Strongest after a rise.",
+  "Bullish harami": "A small green candle inside the previous big red one. Selling is slowing down.",
+  "Bearish harami": "A small red candle inside the previous big green one. Buying is slowing down.",
+  "Piercing line": "A green candle closes above the middle of the previous red one. Buyers are fighting back after a fall.",
+  "Dark cloud cover": "A red candle closes below the middle of the previous green one. Sellers are fighting back after a rise.",
+  "Tweezer bottom": "Two candles with the same low after a fall. Price was rejected at that level twice.",
+  "Tweezer top": "Two candles with the same high after a rise. Price was rejected at that level twice.",
+  "Morning star": "Big red candle, a small pause candle, then a big green candle. A bottom reversal pattern.",
+  "Evening star": "Big green candle, a small pause candle, then a big red candle. A top reversal pattern.",
+  "Three white soldiers": "Three strong green candles in a row, each closing higher. Steady buying pressure.",
+  "Three black crows": "Three strong red candles in a row, each closing lower. Steady selling pressure."
+};
+function candleParts(k) {
+  const top = Math.max(k.o, k.c), bot = Math.min(k.o, k.c);
+  return { body: top - bot, range: k.h - k.l, up: k.h - top, low: bot - k.l, bull: k.c > k.o, bear: k.c < k.o, mid: (k.o + k.c) / 2 };
+}
+function priorTrend(a, i) {
+  const atr = a.atr[i] || a.atr[i - 1];
+  if (i < 6 || !atr) return "flat";
+  const ch = a.closes[i - 1] - a.closes[i - 5];
+  return ch >= atr ? "up" : ch <= -atr ? "down" : "flat";
+}
+/* Returns the patterns that finish on candle i. */
+function detectPatterns(a, i) {
+  const c = a.candles, out = [];
+  if (i < 7 || i >= c.length) return out;
+  const atr = a.atr[i] || a.atr[i - 1];
+  if (!atr) return out;
+  const k = c[i], P = candleParts(k), k1 = c[i - 1], P1 = candleParts(k1), k2 = c[i - 2], P2 = candleParts(k2);
+  const tr = priorTrend(a, i), tr2 = priorTrend(a, i - 2), tol = 0.05 * atr;
+  const add = (name, bias, str) => out.push({ name, bias, str, i, t: k.t });
+  if (P.range < 0.3 * atr) return out; // tiny candle, too small to mean anything
+  const doji = P.body <= 0.1 * P.range;
+  const smallUp = P.up <= Math.max(0.3 * P.body, 0.08 * P.range), smallLow = P.low <= Math.max(0.3 * P.body, 0.08 * P.range);
+  if (doji) {
+    if (P.low >= 0.6 * P.range && P.up <= 0.1 * P.range) add("Dragonfly doji", tr === "down" ? "bull" : "neutral", tr === "down" ? 2 : 1);
+    else if (P.up >= 0.6 * P.range && P.low <= 0.1 * P.range) add("Gravestone doji", tr === "up" ? "bear" : "neutral", tr === "up" ? 2 : 1);
+    else add("Doji", "neutral", 1);
+  } else if (P.low >= 2 * P.body && smallUp) {
+    if (tr === "down") add("Hammer", "bull", 2);
+    else if (tr === "up") add("Hanging man", "bear", 1);
+  } else if (P.up >= 2 * P.body && smallLow) {
+    if (tr === "up") add("Shooting star", "bear", 2);
+    else if (tr === "down") add("Inverted hammer", "bull", 1);
+  } else if (P.body >= 0.9 * P.range && P.range >= atr) {
+    add(P.bull ? "Bullish marubozu" : "Bearish marubozu", P.bull ? "bull" : "bear", 2);
+  } else if (P.body <= 0.3 * P.range && P.up >= P.body && P.low >= P.body) {
+    add("Spinning top", "neutral", 1);
+  }
+  const bullEng = P1.bear && P.bull && k.o <= k1.c + tol && k.c >= k1.o && P.body > P1.body;
+  const bearEng = P1.bull && P.bear && k.o >= k1.c - tol && k.c <= k1.o && P.body > P1.body;
+  if (bullEng) add("Bullish engulfing", "bull", tr === "down" ? 3 : 2);
+  if (bearEng) add("Bearish engulfing", "bear", tr === "up" ? 3 : 2);
+  if (P1.bear && P1.body >= 0.6 * atr && P.bull && k.o >= k1.c && k.c <= k1.o && P.body < 0.6 * P1.body) add("Bullish harami", "bull", 1);
+  if (P1.bull && P1.body >= 0.6 * atr && P.bear && k.o <= k1.c && k.c >= k1.o && P.body < 0.6 * P1.body) add("Bearish harami", "bear", 1);
+  if (!bullEng && P1.bear && P1.body >= 0.6 * atr && P.bull && k.o <= k1.c + tol && k.c > P1.mid && k.c < k1.o && tr !== "up") add("Piercing line", "bull", 2);
+  if (!bearEng && P1.bull && P1.body >= 0.6 * atr && P.bear && k.o >= k1.c - tol && k.c < P1.mid && k.c > k1.o && tr !== "down") add("Dark cloud cover", "bear", 2);
+  if (P1.bear && P.bull && Math.abs(k.l - k1.l) <= 0.1 * atr && tr === "down") add("Tweezer bottom", "bull", 2);
+  if (P1.bull && P.bear && Math.abs(k.h - k1.h) <= 0.1 * atr && tr === "up") add("Tweezer top", "bear", 2);
+  if (P2.bear && P2.body >= 0.6 * atr && P1.body <= 0.35 * P2.body && Math.max(k1.o, k1.c) <= k2.c + 0.1 * atr && P.bull && k.c > P2.mid && tr2 !== "up") add("Morning star", "bull", 3);
+  if (P2.bull && P2.body >= 0.6 * atr && P1.body <= 0.35 * P2.body && Math.min(k1.o, k1.c) >= k2.c - 0.1 * atr && P.bear && k.c < P2.mid && tr2 !== "down") add("Evening star", "bear", 3);
+  const strongBody = p => p.body >= 0.5 * atr;
+  if (P2.bull && P1.bull && P.bull && strongBody(P2) && strongBody(P1) && strongBody(P) && k2.c < k1.c && k1.c < k.c &&
+      k1.o >= k2.o && k1.o <= k2.c + tol && k.o >= k1.o && k.o <= k1.c + tol && P1.up <= 0.35 * P1.body && P.up <= 0.35 * P.body) add("Three white soldiers", "bull", 3);
+  if (P2.bear && P1.bear && P.bear && strongBody(P2) && strongBody(P1) && strongBody(P) && k2.c > k1.c && k1.c > k.c &&
+      k1.o <= k2.o && k1.o >= k2.c - tol && k.o <= k1.o && k.o >= k1.c - tol && P1.low <= 0.35 * P1.body && P.low <= 0.35 * P.body) add("Three black crows", "bear", 3);
+  return out;
+}
+/* Plain-language read of the last few closed candles: colour, size, wicks, volume and any pattern. */
+function candleReport(a, count) {
+  const end = a.candles.length - 2, rows = [];
+  for (let j = 0; j < count; j++) {
+    const idx = end - j, k = a.candles[idx], P = candleParts(k), atr = a.atr[idx] || a.atr[idx - 1] || P.range;
+    const rng = P.range || 1;
+    const size = P.range >= 1.6 * atr ? "large" : P.range <= 0.6 * atr ? "small" : "normal";
+    const colour = P.body <= 0.1 * rng ? "Doji" : P.bull ? "Green" : "Red";
+    const vr = a.volSma[idx] ? k.v / a.volSma[idx] : null;
+    let note = "";
+    if (P.low >= 0.5 * rng && P.body > 0.1 * rng) note = "long lower wick, buyers rejected lower prices";
+    else if (P.up >= 0.5 * rng && P.body > 0.1 * rng) note = "long upper wick, sellers rejected higher prices";
+    else if (P.body >= 0.7 * rng) note = P.bull ? "strong buying, small wicks" : "strong selling, small wicks";
+    rows.push({ idx, t: k.t, colour, size, bodyPct: Math.round(100 * P.body / rng), upPct: Math.round(100 * P.up / rng), lowPct: Math.round(100 * P.low / rng), vol: vr, note, pats: detectPatterns(a, idx) });
+  }
+  return rows;
+}
+
+</script>
+<script>
+"use strict";
+/* Market structure: swings (HH, HL, LH, LL), support and resistance zones, breaks and retests,
+   retracement zones, and the "last N candles" read. All results are cached on the analysis object. */
+
+/* Swing highs and lows. Highs and lows alternate, and each swing is labelled against the one before it. */
+function findSwings(a, k) {
+  const c = a.candles, n = c.length, raw = [];
+  for (let i = k; i < n - k; i++) {
+    let hi = true, lo = true;
+    for (let j = 1; j <= k; j++) {
+      if (c[i].h <= c[i - j].h || c[i].h < c[i + j].h) hi = false;
+      if (c[i].l >= c[i - j].l || c[i].l > c[i + j].l) lo = false;
+      if (!hi && !lo) break;
+    }
+    if (hi) raw.push({ i, p: c[i].h, type: "H" });
+    if (lo) raw.push({ i, p: c[i].l, type: "L" });
+  }
+  const sw = [];
+  for (const s of raw) {
+    const last = sw[sw.length - 1];
+    if (last && last.type === s.type) {
+      if ((s.type === "H" && s.p > last.p) || (s.type === "L" && s.p < last.p)) sw[sw.length - 1] = s;
+    } else sw.push(s);
+  }
+  const atrAt = i => a.atr[Math.min(Math.max(i, 0), n - 1)] || a.atr[n - 2] || c[n - 1].c * 0.002;
+  let ph = null, pl = null;
+  sw.forEach(s => {
+    const tol = 0.05 * atrAt(s.i);
+    if (s.type === "H") { s.lab = !ph ? "H" : s.p > ph.p + tol ? "HH" : s.p < ph.p - tol ? "LH" : "EH"; ph = s; }
+    else { s.lab = !pl ? "L" : s.p > pl.p + tol ? "HL" : s.p < pl.p - tol ? "LL" : "EL"; pl = s; }
+  });
+  return sw;
+}
+
+/* Uptrend = last swing high is a HH and last swing low is a HL. Downtrend = LH and LL.
+   A close beyond the last HL (uptrend) or last LH (downtrend) is a shift (CHoCH) and turns the read into a range. */
+function structureOf(a) {
+  const sw = a.swings, i = a.candles.length - 2;
+  const hs = sw.filter(s => s.type === "H"), ls = sw.filter(s => s.type === "L");
+  const h1 = hs[hs.length - 1], l1 = ls[ls.length - 1];
+  let raw = "range";
+  if (h1 && l1 && h1.lab === "HH" && l1.lab === "HL") raw = "up";
+  else if (h1 && l1 && h1.lab === "LH" && l1.lab === "LL") raw = "down";
+  const close = a.closes[i];
+  let shift = null;
+  if (raw === "up" && l1 && close < l1.p) shift = "bear";
+  if (raw === "down" && h1 && close > h1.p) shift = "bull";
+  return { rawDir: raw, dir: shift ? "range" : raw, shift, h1, l1, seq: sw.slice(-6).map(s => s.lab) };
+}
+
+/* Read of the last N closed candles: drift, candle colours, EMA position, swings, volume, patterns. */
+function lastN(a, N) {
+  a._n = a._n || {};
+  if (a._n[N]) return a._n[N];
+  const c = a.candles, end = c.length - 2, start = Math.max(0, end - N + 1), w = c.slice(start, end + 1);
+  const atr = a.atr[end] || a.atr[end - 1] || (c[end].c * 0.002);
+  const o0 = w[0].o, c1 = w[w.length - 1].c;
+  let bull = 0, bear = 0, above20 = 0, withEma = 0, bp = 0, brp = 0, hi = -Infinity, lo = Infinity;
+  w.forEach((k, j) => {
+    const idx = start + j;
+    if (k.c > k.o) bull++; else if (k.c < k.o) bear++;
+    if (a.ema20[idx] != null) { withEma++; if (k.c > a.ema20[idx]) above20++; }
+    hi = Math.max(hi, k.h); lo = Math.min(lo, k.l);
+    detectPatterns(a, idx).forEach(p => { if (p.str >= 2) { if (p.bias === "bull") bp++; if (p.bias === "bear") brp++; } });
+  });
+  const cnt = { HH: 0, HL: 0, LH: 0, LL: 0 };
+  a.swings.filter(s => s.i >= start && s.i <= end).forEach(s => { if (cnt[s.lab] != null) cnt[s.lab]++; });
+  const m = w.length, xm = (m - 1) / 2;
+  let sxy = 0, sxx = 0, ym = 0; w.forEach(k => { ym += k.c; }); ym /= m;
+  w.forEach((k, j) => { sxy += (j - xm) * (k.c - ym); sxx += (j - xm) * (j - xm); });
+  const slope = sxx ? sxy / sxx : 0, slopeATR = slope * m / atr;
+  const recent = w.slice(-10), earlier = w.slice(0, -10);
+  const avgV = arr => arr.length ? arr.reduce((s, k) => s + k.v, 0) / arr.length : 0;
+  const volRatio = avgV(earlier) ? avgV(recent) / avgV(earlier) : null;
+  const pctAbove = withEma ? above20 / withEma : 0.5;
+  const pos = (c1 - lo) / ((hi - lo) || 1), netATR = (c1 - o0) / atr, net = (c1 - o0) / o0 * 100;
+  let sc = 0;
+  sc += netATR >= 1.5 ? 1 : netATR <= -1.5 ? -1 : 0;
+  sc += pctAbove >= 0.6 ? 1 : pctAbove <= 0.4 ? -1 : 0;
+  sc += (cnt.HH + cnt.HL) - (cnt.LH + cnt.LL) >= 1 ? 1 : (cnt.LH + cnt.LL) - (cnt.HH + cnt.HL) >= 1 ? -1 : 0;
+  sc += bull - bear >= Math.round(m * 0.12) ? 1 : bear - bull >= Math.round(m * 0.12) ? -1 : 0;
+  sc += pos >= 0.66 ? 1 : pos <= 0.34 ? -1 : 0;
+  sc += slopeATR >= 1 ? 1 : slopeATR <= -1 ? -1 : 0;
+  sc += bp - brp >= 1 ? 1 : brp - bp >= 1 ? -1 : 0;
+  const bias = sc >= 3 ? "up" : sc <= -3 ? "down" : "range";
+  const label = bias === "up" ? "Bullish" : bias === "down" ? "Bearish" : "Range";
+  const text = label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + (net >= 0 ? "+" : "") + net.toFixed(2) + "% over " + m + " candles, " + Math.round(pctAbove * 100) + "% closed above EMA 20, " +
+    (cnt.HH + cnt.HL) + " higher swings vs " + (cnt.LH + cnt.LL) + " lower swings";
+  return (a._n[N] = { N: m, start, end, net, netATR, bull, bear, pctAbove, volRatio, cnt, pos, hi, lo, slopeATR, bp, brp, score: sc, bias, label, text, widthPct: (hi - lo) / ((hi + lo) / 2) * 100 });
+}
+
+/* Support and resistance zones: swing prices that sit close together are merged into one zone. n = number of touches. */
+function zonesOf(a) {
+  if (a._z) return a._z;
+  const n = a.candles.length, price = a.candles[n - 1].c, atr = a.atr[n - 2] || price * 0.002;
+  const tol = Math.max(0.4 * atr, price * 0.0008);
+  const pts = a.swings.map(s => ({ p: s.p, i: s.i })).sort((x, y) => x.p - y.p);
+  const zones = [];
+  for (const q of pts) {
+    const z = zones[zones.length - 1];
+    if (z && Math.abs(q.p - z.p) <= tol) { z.sum += q.p; z.n++; z.p = z.sum / z.n; z.last = Math.max(z.last, q.i); z.first = Math.min(z.first, q.i); }
+    else zones.push({ sum: q.p, n: 1, p: q.p, first: q.i, last: q.i });
+  }
+  return (a._z = { zones, tol, atr });
+}
+/* Nearest support below and resistance above the current price (up to 3 each). */
+function levelsNear(a) {
+  if (a._l) return a._l;
+  const n = a.candles.length, price = a.candles[n - 1].c;
+  const cand = zonesOf(a).zones.filter(z => z.n >= 2 || z.last >= n - 100);
+  const res = cand.filter(z => z.p > price * 1.0005).sort((x, y) => x.p - y.p);
+  const sup = cand.filter(z => z.p < price * 0.9995).sort((x, y) => y.p - x.p);
+  const pick = l => { const strong = l.filter(z => z.n >= 2).slice(0, 3); return strong.length >= 2 ? strong : l.slice(0, 3); };
+  const f = z => ({ p: z.p, n: z.n, last: z.last });
+  return (a._l = { res: pick(res).map(f), sup: pick(sup).map(f), price });
+}
+
+/* Breaks of support or resistance. dir is the direction of the latest decisive close (up or down).
+   status: fresh (just broke), awaiting (no retest yet), retesting (back at the level now), held (retest held),
+   trap (broke one way and closed straight back, a false break). */
+function detectBreaks(a) {
+  if (a._b) return a._b;
+  const c = a.candles, n = c.length, end = n - 2, k = a.tf.k;
+  const Z = zonesOf(a), atr = Z.atr, buf = 0.15 * atr, win = Math.max(0, end - 70), out = [];
+  for (const z of Z.zones) {
+    if (z.n < 2) continue;
+    let st = null; const evs = [];
+    for (let i = Math.max(win, z.first + k + 1); i <= end; i++) {
+      const cl = c[i].c;
+      if (cl > z.p + buf) { if (st === "below") evs.push({ dir: "up", i }); st = "above"; }
+      else if (cl < z.p - buf) { if (st === "above") evs.push({ dir: "down", i }); st = "below"; }
+    }
+    if (!evs.length) continue;
+    const e = evs[evs.length - 1], prev = evs[evs.length - 2];
+    const age = end - e.i;
+    if (age > 45) continue;
+    const vr = a.volSma[e.i] ? c[e.i].v / a.volSma[e.i] : null;
+    if (prev && e.i - prev.i <= 6) {
+      let ext = prev.dir === "up" ? -Infinity : Infinity;
+      for (let j = prev.i; j <= e.i; j++) ext = prev.dir === "up" ? Math.max(ext, c[j].h) : Math.min(ext, c[j].l);
+      out.push({ type: "trap", dir: e.dir, p: z.p, n: z.n, i: e.i, t: c[e.i].t, age, status: "trap", vol: vr, edge: ext, from: prev.dir });
+      continue;
+    }
+    let retestAt = null;
+    for (let j = e.i + 1; j <= n - 1 && retestAt === null; j++) {
+      const q = c[j];
+      if (e.dir === "up") { if (q.l <= z.p + 0.35 * atr && q.c >= z.p - buf) retestAt = j; }
+      else if (q.h >= z.p - 0.35 * atr && q.c <= z.p + buf) retestAt = j;
+    }
+    const cur = c[n - 1].c, sgn = e.dir === "up" ? 1 : -1, dist = (cur - z.p) * sgn / atr;
+    let status;
+    if (retestAt !== null && n - 1 - retestAt <= 1 && Math.abs(cur - z.p) <= 0.6 * atr && dist >= -0.3) status = "retesting";
+    else if (retestAt !== null) status = "held";
+    else status = age <= 3 ? "fresh" : "awaiting";
+    out.push({ type: "break", dir: e.dir, p: z.p, n: z.n, i: e.i, t: c[e.i].t, age, status, retestAt, vol: vr, dist });
+  }
+  out.sort((x, y) => x.age - y.age);
+  return (a._b = out);
+}
+
+/* Retracement: fibonacci levels of the latest impulse leg, how deep price is now, how deep pullbacks went in the last 100 candles. */
+function retraceInfo(a) {
+  if (a._r !== undefined) return a._r;
+  const n = a.candles.length, end = n - 2, sw = a.swings, price = a.candles[n - 1].c, atr = a.atr[end] || price * 0.002;
+  let res = null;
+  if (sw.length >= 3) {
+    const st = a.struct, lastSw = sw[sw.length - 1];
+    const dir = st.rawDir === "up" ? "up" : st.rawDir === "down" ? "down" : (lastSw.type === "H" ? "up" : "down");
+    const rev = sw.slice().reverse();
+    let to, from;
+    if (dir === "up") { to = rev.find(s => s.type === "H"); from = to && rev.find(s => s.type === "L" && s.i < to.i); }
+    else { to = rev.find(s => s.type === "L"); from = to && rev.find(s => s.type === "H" && s.i < to.i); }
+    if (to && from && Math.abs(to.p - from.p) > 0) {
+      const R = Math.abs(to.p - from.p);
+      const lv = f => dir === "up" ? to.p - f * R : to.p + f * R;
+      const levels = [0.382, 0.5, 0.618, 0.786].map(f => ({ f, p: lv(f) }));
+      const depthNow = dir === "up" ? (to.p - price) / R : (price - to.p) / R;
+      const gLo = Math.min(levels[0].p, levels[2].p), gHi = Math.max(levels[0].p, levels[2].p);
+      const lk = a.candles[end];
+      const overlap = lk.l <= gHi + 0.2 * atr && lk.h >= gLo - 0.2 * atr;
+      const inGolden = (price >= gLo - 0.2 * atr && price <= gHi + 0.2 * atr) || (overlap && depthNow > 0.2 && depthNow < 0.9);
+      const depthsIn = W => {
+        const lo = n - 1 - W, ds = [], s = sw.filter(x => x.i >= lo);
+        for (let q = 0; q + 2 < s.length; q++) {
+          const s0 = s[q], s1 = s[q + 1], s2 = s[q + 2];
+          if (dir === "up" && s0.type === "L" && s1.type === "H" && s2.type === "L" && s1.p > s0.p) ds.push((s1.p - s2.p) / (s1.p - s0.p));
+          if (dir === "down" && s0.type === "H" && s1.type === "L" && s2.type === "H" && s0.p > s1.p) ds.push((s2.p - s1.p) / (s0.p - s1.p));
+        }
+        return ds.map(d => clamp(d, 0, 1.5));
+      };
+      let usedWin = 100, ds = depthsIn(100);
+      if (ds.length < 2) { usedWin = 200; ds = depthsIn(200); }
+      const avgDepth = ds.length ? ds.reduce((s, d) => s + d, 0) / ds.length : null;
+      const conf = [];
+      const zs = zonesOf(a).zones.filter(z => z.n >= 2);
+      levels.slice(0, 3).forEach(L => {
+        [["EMA 20", a.ema20[end]], ["EMA 50", a.ema50[end]]].forEach(([nm, v]) => { if (v != null && Math.abs(v - L.p) <= 0.3 * atr) conf.push(nm + " sits at the " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ")"); });
+        zs.forEach(z => { if (Math.abs(z.p - L.p) <= 0.3 * atr) conf.push("support/resistance zone " + fp(z.p) + " (x" + z.n + ") sits at the " + (L.f * 100).toFixed(1) + "% level"); });
+      });
+      res = { dir, from, to, R, levels, golden: [gLo, gHi], depthNow, inGolden, invalid: depthNow > 1, avgDepth, nLegs: ds.length, usedWin, typicalP: avgDepth == null ? null : lv(avgDepth), conf };
+    }
+  }
+  return (a._r = res);
+}
+
+</script>
+<script>
+"use strict";
+/* Market data: Binance candles, CoinGecko market caps (coins above MIN_CAP only). */
+const CG = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false&page=";
+
+async function jget(path) {
+  let err;
+  for (const host of HOSTS) {
+    try { const r = await fetch(host + path); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); } catch (e) { err = e; }
+  }
+  throw err;
+}
+async function fetchKlines(symbol, interval) {
+  let lastErr;
+  for (const host of HOSTS) {
+    try {
+      const ctl = new AbortController();
+      const to = setTimeout(() => ctl.abort(), 9000);
+      const r = await fetch(host + "/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&limit=300", { signal: ctl.signal });
+      clearTimeout(to);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      if (!Array.isArray(j) || j.length < 120) throw new Error("Not enough candles");
+      return j.map(k => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] }));
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+/* Five timeframes per coin. The daily one is background only. A short cache lets page changes feel instant. */
+async function fetchAll(pair, useCache) {
+  let raw = null;
+  if (useCache) {
+    try { const c = JSON.parse(store.get("kl", "null")); if (c && c.pair === pair && Date.now() - c.t < 25000) raw = c.raw; } catch (e) { /* ignore */ }
+  }
+  if (!raw) {
+    const res = await Promise.all(TFS.map(t => fetchKlines(pair, t.id)));
+    raw = {}; TFS.forEach((t, i) => { raw[t.id] = res[i]; });
+    if (useCache) store.set("kl", JSON.stringify({ pair, t: Date.now(), raw }));
+  }
+  const A = {}; TFS.forEach(t => { A[t.id] = analyze(raw[t.id], t); });
+  return A;
+}
+function demoKlines(symbol, tf) {
+  let seed = 0; for (const ch of symbol + tf.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const vol = { "5m": 0.002, "15m": 0.0035, "1h": 0.006, "4h": 0.012, "1d": 0.025 }[tf.id];
+  let p = 100, ph = 0; const out = [], now = Math.floor(Date.now() / tf.ms) * tf.ms;
+  for (let i = 0; i < 300; i++) {
+    ph += 0.12; const o = p, c = o * (1 + (rnd() - 0.47) * vol * 2 + Math.sin(ph) * vol * 0.4 + 0.0002);
+    const h = Math.max(o, c) * (1 + rnd() * vol * 0.6), l = Math.min(o, c) * (1 - rnd() * vol * 0.6);
+    out.push({ t: now - (299 - i) * tf.ms, o, h, l, c, v: 800 + rnd() * 1200 });
+    p = c;
+  }
+  return out;
+}
+function demoAll(pair) { const A = {}; TFS.forEach(t => { A[t.id] = analyze(demoKlines(pair, t), t); }); return A; }
+
+function normalizePair(raw) {
+  let s = String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!s) s = "BTCUSDT";
+  if (!s.endsWith("USDT")) s += "USDT";
+  return s;
+}
+async function loadUniverse() {
+  const setU = (list, verified, msg) => {
+    state.uni = { list, map: Object.fromEntries(list.map(c => [c.pair, c])), verified };
+    state.capMsg = msg;
+  };
+  try {
+    const cached = JSON.parse(store.get("uni", "null"));
+    if (cached && Date.now() - cached.t < 6 * 3600e3 && cached.list.length > 20) {
+      setU(cached.list, true, cached.list.length + " coins pass the filter: market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance (CoinGecko data, cached up to 6 hours).");
+      return;
+    }
+  } catch (e) { /* ignore cache errors */ }
+  let usdt;
+  try {
+    const prices = await jget("/api/v3/ticker/price");
+    usdt = new Set(prices.map(p => p.symbol).filter(s => s.endsWith("USDT")));
+  } catch (e) { usdt = null; }
+  try {
+    const seen = new Set(), list = [];
+    let rank = 0;
+    for (let page = 1; page <= 5; page++) {
+      const r = await fetch(CG + page);
+      if (!r.ok) throw new Error("CoinGecko HTTP " + r.status);
+      const j = await r.json();
+      if (!Array.isArray(j) || !j.length) break;
+      let below = false;
+      for (const c of j) {
+        rank++;
+        if (c.market_cap == null || c.market_cap < MIN_CAP) { below = true; continue; }
+        const sym = String(c.symbol).toUpperCase();
+        if (STABLE.has(sym) || seen.has(sym)) continue;
+        const pair = sym + "USDT";
+        if (usdt && !usdt.has(pair)) continue;
+        seen.add(sym); list.push({ sym, pair, name: c.name, mc: c.market_cap, rank: c.market_cap_rank || rank });
+      }
+      if (below) break;
+    }
+    if (list.length < 10) throw new Error("Too few coins returned");
+    store.set("uni", JSON.stringify({ t: Date.now(), list }));
+    setU(list, true, list.length + " coins pass the filter: market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance (CoinGecko data).");
+  } catch (e) {
+    setU(FALLBACK.map((sym, i) => ({ sym, pair: sym + "USDT", name: sym, mc: null, rank: i + 1 })), false,
+      "Could not load market caps (" + (e && e.message ? e.message : "network error") + "). Using a built-in list of 30 large coins, all far above " + fmtCap(MIN_CAP) + ". Reload to try again.");
+  }
+}
+/* Loads candles for state.symbol, runs the full analysis and builds the signal. Returns false if the coin is not allowed. */
+async function loadSymbol() {
+  const pair = normalizePair(state.symbol);
+  if (state.uni.verified && !state.uni.map[pair]) {
+    showBanner(coinOf(pair) + " is skipped. Only coins with market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance are analysed. Pick a coin from the list.");
+    return false;
+  }
+  state.symbol = pair; store.set("symbol", pair);
+  try {
+    state.A = await fetchAll(pair, true);
+    state.demo = false; showBanner("");
+  } catch (e) {
+    state.A = demoAll(pair); state.demo = true;
+    showBanner("Could not load candles from Binance (" + (e && e.message ? e.message : "network error") + "). Showing made-up demo candles, not real prices. Check the pair name and your internet connection, then try again.");
+  }
+  state.sig = buildSignal(state.A);
+  state.sessStats = sessionStats(state.A["1h"].candles);
+  return true;
+}
+
+</script>
+<script>
+"use strict";
+/* Scheduled events (CPI, jobs, Fed), data surprise scoring, headline mood and the trade windows around news. */
+
+/* Times are UTC. Dates checked against BLS and the Fed calendar on 30 Oct 2026. Edit this list when new dates are published. */
+const EVENTS = [
+  { id: "nfp-sep", type: "jobs", title: "US jobs report (September)", iso: "2026-10-02T12:30:00Z", imp: "high" },
+  { id: "cpi-sep", type: "cpi", title: "US CPI (September)", iso: "2026-10-14T12:30:00Z", imp: "high" },
+  { id: "fomc-oct", type: "fed", title: "FOMC rate decision (Oct 27-28)", iso: "2026-10-28T18:00:00Z", imp: "high" },
+  { id: "gdp-q3", type: "gdp", title: "US GDP and PCE inflation", iso: "2026-10-29T12:30:00Z", imp: "med" },
+  { id: "nfp-oct", type: "jobs", title: "US jobs report (October)", iso: "2026-11-06T13:30:00Z", imp: "high" },
+  { id: "cpi-oct", type: "cpi", title: "US CPI (October)", iso: "2026-11-10T13:30:00Z", imp: "high" },
+  { id: "min-oct", type: "fedminutes", title: "FOMC minutes (October meeting), expected date", iso: "2026-11-18T19:00:00Z", imp: "med" },
+  { id: "nfp-nov", type: "jobs", title: "US jobs report (November)", iso: "2026-12-04T13:30:00Z", imp: "high" },
+  { id: "fomc-dec", type: "fed", title: "FOMC rate decision (Dec 8-9)", iso: "2026-12-09T19:00:00Z", imp: "high" },
+  { id: "cpi-nov", type: "cpi", title: "US CPI (November)", iso: "2026-12-10T13:30:00Z", imp: "high" }
+];
+/* Minutes to avoid new scalps before (b) and after (a) each release. */
+const WIN = { cpi: { b: 45, a: 60 }, jobs: { b: 45, a: 60 }, fed: { b: 90, a: 120 }, fedminutes: { b: 15, a: 30 }, gdp: { b: 15, a: 30 } };
+
+/* Numbers typed on the CPI, jobs and Fed pages. The defaults below were read from news pages on 30 Oct 2026, so check them. */
+const DEF = { cpiHP: "3.4", cpiHF: "3.6", cpiHA: "3.7", cpiCP: "2.4", cpiCF: "2.5", cpiCA: "2.6",
+  jobsA: "29", jobsF: "90", jobsP: "", uA: "4.2", uP: "",
+  fedLo: "3.75", fedHi: "4.00", fedExp: "0", fedAct: "0", fedTone: "hawkish", fedOdds: "85" };
+const val = k => store.get("in_" + k, DEF[k] == null ? "" : DEF[k]);
+const setVal = (k, v) => store.set("in_" + k, v);
+const numv = k => { const x = parseFloat(val(k)); return isFinite(x) ? x : NaN; };
+
+/* Each score is from the crypto point of view: positive is bullish, negative is bearish, range -2 to +2. */
+function cpiScore() {
+  const dH = numv("cpiHA") - numv("cpiHF"), dC = numv("cpiCA") - numv("cpiCF");
+  let d;
+  if (isFinite(dH) && isFinite(dC)) d = 0.4 * dH + 0.6 * dC; else if (isFinite(dC)) d = dC; else if (isFinite(dH)) d = dH; else return null;
+  const s = d >= 0.2 ? -2 : d >= 0.1 ? -1 : d <= -0.2 ? 2 : d <= -0.1 ? 1 : 0;
+  const text = s <= -2 ? "Much hotter than forecast. Rate-hike fear rises, usually bad for crypto." : s === -1 ? "Hotter than forecast. Mildly bearish for crypto." :
+    s === 0 ? "In line with forecast. Usually a small reaction." : s === 1 ? "Cooler than forecast. Mildly bullish for crypto." : "Much cooler than forecast. Rate fears ease, usually good for crypto.";
+  return { s, d, text };
+}
+function jobsScore() {
+  const dP = numv("jobsA") - numv("jobsF");
+  if (!isFinite(dP)) return null;
+  const du = numv("uA") - numv("uP");
+  const hawk = clamp(dP / 75, -1.5, 1.5) * 0.7 + (isFinite(du) ? clamp(du / 0.1, -1, 1) * -0.3 : 0);
+  const s = clamp(Math.round(-hawk * 1.2), -2, 2);
+  const recession = numv("jobsA") < 0 || du >= 0.3;
+  const text = (s > 0 ? "Weaker than forecast. Fewer rate hikes expected, mildly bullish for crypto in the short term." : s < 0 ? "Stronger than forecast. More rate hikes possible, bearish for crypto in the short term." : "Close to forecast. Usually a small reaction.") +
+    (recession ? " Very weak jobs can also bring recession fear, which can reverse the move." : "");
+  return { s, hawk, text };
+}
+function fedScore() {
+  const exp = numv("fedExp"), act = numv("fedAct");
+  if (!isFinite(exp) || !isFinite(act)) return null;
+  const tone = val("fedTone") === "hawkish" ? 1 : val("fedTone") === "dovish" ? -1 : 0;
+  const hawk = (act - exp) / 25 + tone * 0.6;
+  const s = clamp(-Math.round(hawk * 1.5), -2, 2);
+  const text = (act - exp > 0 ? "The Fed raised more than expected. " : act - exp < 0 ? "The Fed raised less (or cut more) than expected. " : "Decision matched expectations. ") +
+    (tone > 0 ? "Tone was hawkish." : tone < 0 ? "Tone was dovish." : "Tone was neutral.") + (s < 0 ? " Bearish for crypto." : s > 0 ? " Bullish for crypto." : " Small net effect.");
+  return { s, hawk, text };
+}
+
+/* ---------- Headline sentiment ---------- */
+const BULL_KW = [[/\brate cuts?\b|\bcuts? (interest )?rates\b/i, 2], [/\bdovish\b/i, 2], [/\betf\b.{0,25}\bapprov/i, 2], [/\binflows?\b/i, 1], [/\badoption\b/i, 1], [/\bstimulus\b/i, 1],
+  [/\binflation\b.{0,20}\b(falls?|eases?|cools?|slows?|drops?)\b/i, 2], [/\bsoft landing\b/i, 1], [/\bceasefire\b|\bpeace (deal|talks)\b/i, 2], [/\btrade deal\b/i, 2], [/\btariffs?\b.{0,20}\b(cut|relief|pause|lowered)\b/i, 2],
+  [/\brall(y|ies|ied)\b/i, 1], [/\bsurges?\b|\bsoars?\b/i, 1], [/\brecord high\b|\ball-time high\b/i, 1], [/\brebound/i, 1]];
+const BEAR_KW = [[/\brate hikes?\b|\bhikes? (interest )?rates\b|\braises? rates\b/i, 2], [/\bhawkish\b/i, 2], [/\binflation\b.{0,20}\b(rises?|jumps?|accelerat\w*|hotter|heats?|surges?)\b/i, 2], [/\bhot(ter)? (inflation|cpi)\b/i, 2],
+  [/\bbans?\b|\bbanned\b/i, 1], [/\bcrackdown\b/i, 2], [/\bhack(ed|ers?)?\b|\bexploit(ed)?\b/i, 2], [/\boutflows?\b/i, 1], [/\blawsuit\b|\bsues?\b/i, 1], [/\btariffs?\b/i, 1],
+  [/\bescalat\w*\b/i, 2], [/\bwar\b|\bstrikes?\b|\bmissile\b/i, 1], [/\bsanctions?\b/i, 1], [/\brecession\b/i, 2], [/\bdefault(s|ed)?\b/i, 2], [/\bbank (failure|run|collapse)\b/i, 2],
+  [/\bliquidat\w*\b/i, 1], [/\bsell-?off\b/i, 2], [/\bplunges?\b|\bcrash(es|ed)?\b|\btumbles?\b/i, 2], [/\bslump(s|ed)?\b|\bslides?\b/i, 1], [/\bfraud\b|\bscam\b/i, 2], [/\bshutdown\b/i, 1], [/\boil\b.{0,20}\b(spikes?|surges?|jumps?)\b/i, 1]];
+function scoreHeadline(text) {
+  let s = 0; const hits = [];
+  BULL_KW.forEach(([re, w]) => { const m = String(text).match(re); if (m) { s += w; hits.push("+" + m[0].toLowerCase()); } });
+  BEAR_KW.forEach(([re, w]) => { const m = String(text).match(re); if (m) { s -= w; hits.push("-" + m[0].toLowerCase()); } });
+  return { s, hits, label: s >= 1 ? "bullish" : s <= -1 ? "bearish" : "neutral" };
+}
+function newsMood() {
+  const since = Date.now() - 24 * 3600e3; let sum = 0, abs = 0, cnt = 0;
+  ["us", "world", "crypto"].forEach(k => {
+    const d = state.news[k]; if (!d || !d.items) return;
+    d.items.forEach(it => { if (it.t >= since) { sum += it.sent.s; abs += Math.abs(it.sent.s); cnt++; } });
+  });
+  if (!cnt) return null;
+  return { mood: clamp(sum / (abs + 4), -1, 1), count: cnt, sum };
+}
+
+/* ---------- Combined macro picture ---------- */
+function macroBias(now) {
+  const parts = []; let total = 0;
+  const lastOf = t => EVENTS.filter(e => e.type === t && Date.parse(e.iso) <= now).sort((a, b) => Date.parse(b.iso) - Date.parse(a.iso))[0];
+  const chk = (type, hours, fn, label) => {
+    const e = lastOf(type); if (!e || now - Date.parse(e.iso) > hours * 3600e3) return;
+    const r = fn(); if (r) { parts.push({ label, s: r.s, text: r.text }); total += r.s; }
+  };
+  chk("cpi", 72, cpiScore, "CPI"); chk("jobs", 72, jobsScore, "US jobs"); chk("fed", 7 * 24, fedScore, "Fed decision");
+  const m = newsMood();
+  if (m) { const s = m.mood >= 0.3 ? 1 : m.mood <= -0.3 ? -1 : 0; parts.push({ label: "Headlines", s, text: "Headline mood " + (m.mood >= 0 ? "+" : "") + m.mood.toFixed(2) + " from " + m.count + " stories in the last 24 hours." }); total += s; }
+  const label = total >= 1 ? "bullish" : total <= -1 ? "bearish" : "neutral";
+  const text = "Macro and news mood: " + label + (parts.length ? " (" + parts.map(p => p.label + " " + (p.s > 0 ? "+" : "") + p.s).join(", ") + ")" : " (no recent data)");
+  return { total, label, parts, text };
+}
+/* block = do not open new scalps. caution = trade smaller. */
+function macroState(now) {
+  const evs = EVENTS.map(e => ({ ...e, ms: Date.parse(e.iso), w: WIN[e.type] || { b: 15, a: 30 } })).sort((a, b) => a.ms - b.ms);
+  let block = null, caution = null;
+  for (const e of evs) {
+    const s = e.ms - e.w.b * 60000, en = e.ms + e.w.a * 60000;
+    if (now >= s && now <= en) {
+      block = { e, from: s, to: en, text: e.title + (now < e.ms ? " is due in " + fmtDur(e.ms - now) : " came out " + fmtDur(now - e.ms) + " ago") + ". Avoid new scalps until " + hhmm(en) + "." };
+      break;
+    }
+    if (!caution && e.imp === "high" && ((now >= s - 4 * 3600e3 && now < s) || (now > en && now <= en + 3 * 3600e3))) {
+      caution = { e, text: e.title + (now < e.ms ? " is due in " + fmtDur(e.ms - now) : " came out " + fmtDur(now - e.ms) + " ago") + ". Trade half size and keep stops tight." };
+    }
+  }
+  const next = evs.find(e => e.ms > now && e.imp === "high") || evs.find(e => e.ms > now) || null;
+  return { block, caution, next, bias: macroBias(now), events: evs };
+}
+function eventStatus(e, now) {
+  const w = e.w || WIN[e.type] || { b: 15, a: 30 };
+  const s = e.ms - w.b * 60000, en = e.ms + w.a * 60000;
+  if (now > en) return { txt: "Done", cls: "mute" };
+  if (now >= s) return { txt: "AVOID NOW", cls: "down" };
+  if (now >= s - 4 * 3600e3) return { txt: "Caution", cls: "warn" };
+  return { txt: "Upcoming", cls: "up" };
+}
+/* Table of events. types = list of event types to include, or null for all. */
+function eventsTable(types, includePast) {
+  const now = Date.now(), evs = macroState(now).events.filter(e => (!types || types.includes(e.type)) && (includePast || e.ms >= now - 3 * 86400e3));
+  return '<div class="tbl"><table><thead><tr><th>When (your time)</th><th>Event</th><th>Impact</th><th>Countdown</th><th>Avoid new scalps</th><th>Status</th></tr></thead><tbody>' +
+    evs.map(e => {
+      const st = eventStatus(e, now), w = e.w;
+      return '<tr><td>' + esc(dayTime(e.ms)) + '</td><td>' + esc(e.title) + '</td><td><span class="pill ' + (e.imp === "high" ? "down" : "warn") + '">' + e.imp.toUpperCase() + '</span></td>' +
+        '<td class="num">' + (e.ms > now ? '<span class="cdn" data-ms="' + e.ms + '">' + fmtCountdown(e.ms - now) + '</span>' : '<span class="mute-t">' + ago(e.ms) + '</span>') + '</td>' +
+        '<td class="num">' + hhmm(e.ms - w.b * 60000) + ' to ' + hhmm(e.ms + w.a * 60000) + '</td><td><span class="pill ' + st.cls + '">' + st.txt + '</span></td></tr>';
+    }).join("") + '</tbody></table></div>';
+}
+
+/* ---------- News feeds (GDELT for world and US headlines, CryptoCompare for crypto) ---------- */
+const GD = "https://api.gdeltproject.org/api/v2/doc/doc?mode=artlist&format=json&maxrecords=40&sort=datedesc&timespan=24h&query=";
+const Q_US = '("Federal Reserve" OR "interest rates" OR inflation OR "jobs report" OR tariffs OR Treasury OR "SEC" OR Trump OR "stock market" OR "dollar") sourcecountry:US sourcelang:english';
+const Q_WORLD = '(war OR ceasefire OR sanctions OR OPEC OR oil OR China OR Russia OR Iran OR Israel OR "European Central Bank" OR "Bank of Japan" OR "trade deal" OR recession OR "bank failure") sourcelang:english';
+async function getJson(url, ms) {
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), ms || 10000);
+  try { const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); } finally { clearTimeout(to); }
+}
+function gdeltTime(s) {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/.exec(String(s || ""));
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.now();
+}
+async function loadNews(kind, force) {
+  const key = "news_" + kind;
+  if (!force) {
+    try { const c = JSON.parse(store.get(key, "null")); if (c && Date.now() - c.at < 15 * 60000) { state.news[kind] = c; return; } } catch (e) { /* ignore */ }
+  }
+  try {
+    let items;
+    if (kind === "crypto") {
+      const j = await getJson("https://min-api.cryptocompare.com/data/v2/news/?lang=EN");
+      items = (j.Data || []).slice(0, 40).map(x => ({ title: x.title, url: x.url, src: (x.source_info && x.source_info.name) || x.source || "", t: (x.published_on || 0) * 1000 }));
+    } else {
+      const j = await getJson(GD + encodeURIComponent(kind === "us" ? Q_US : Q_WORLD));
+      items = (j.articles || []).map(x => ({ title: x.title, url: x.url, src: x.domain || "", t: gdeltTime(x.seendate) }));
+    }
+    const seen = new Set();
+    items = items.filter(x => x.title && !seen.has(x.title) && seen.add(x.title)).map(x => ({ ...x, sent: scoreHeadline(x.title) })).sort((a, b) => b.t - a.t);
+    state.news[kind] = { items, at: Date.now(), error: null };
+    store.set(key, JSON.stringify(state.news[kind]));
+  } catch (e) {
+    const old = state.news[kind];
+    state.news[kind] = { items: old && old.items ? old.items : [], at: old ? old.at : null, error: e && e.message ? e.message : "network error" };
+  }
+}
+/* GDELT allows about one request every 5 seconds, so the two GDELT calls are spaced out. */
+async function loadAllNews(force) {
+  await loadNews("crypto", force);
+  await loadNews("us", force);
+  if (!(state.news.us && state.news.us.at && Date.now() - state.news.us.at < 3000)) await sleep(5500);
+  await loadNews("world", force);
+}
+function newsListHtml(kind) {
+  const d = state.news[kind];
+  if (!d) return '<div class="sub">Loading headlines...</div>';
+  const mood = (() => { let s = 0, a = 0; d.items.forEach(x => { s += x.sent.s; a += Math.abs(x.sent.s); }); return d.items.length ? clamp(s / (a + 4), -1, 1) : 0; })();
+  const head = d.items.length ? '<div class="status-row"><span class="sub" style="margin:0">' + d.items.length + ' headlines, last 24 hours. Mood ' + '<b class="' + (mood >= 0.3 ? "up-t" : mood <= -0.3 ? "down-t" : "mute-t") + '">' +
+    (mood >= 0.3 ? "bullish" : mood <= -0.3 ? "bearish" : "neutral") + ' (' + (mood >= 0 ? "+" : "") + mood.toFixed(2) + ')</b>' + (d.at ? ', updated ' + ago(d.at) : '') + '</span></div>' : '';
+  const err = d.error ? '<div class="banner" style="margin-bottom:8px">Could not refresh this feed (' + esc(d.error) + '). ' + (d.items.length ? 'Showing the last saved headlines.' : 'Check your internet connection, or open the source site directly.') + '</div>' : '';
+  return err + head + (d.items.length ? '<ul class="news">' + d.items.slice(0, 30).map(x =>
+    '<li><span><span class="pill ' + (x.sent.label === "bullish" ? "up" : x.sent.label === "bearish" ? "down" : "mute") + '">' + x.sent.label.toUpperCase() + '</span></span>' +
+    '<span><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.title) + '</a><small>' + esc(x.src) + ' · ' + ago(x.t) + (x.sent.hits.length ? ' · ' + esc(x.sent.hits.join(", ")) : '') + '</small></span></li>').join("") + '</ul>' : '<div class="sub">No headlines.</div>');
+}
+
+</script>
+<script>
+"use strict";
+/* Scalping and intraday signal.
+   Direction comes from the bigger trend (4H and 1H structure plus the hidden daily chart).
+   Entry comes from where price pulls back to (retracement zone, retest of a broken level, support or resistance, EMA).
+   The trigger is a candle on the 5 and 15 minute charts. Macro news can block the trade. */
+const SETUP_MIN = 8, WATCH_MIN = 6;
+const sgn = d => d === "up" ? 1 : d === "down" ? -1 : 0;
+
+/* Candle confirmation on the 5m and 15m charts. */
+function triggerCheck(A, L) {
+  const M5 = A["5m"], M15 = A["15m"], wantB = L ? "bull" : "bear", oppB = L ? "bear" : "bull";
+  const e5 = M5.candles.length - 2, e15 = M15.candles.length - 2;
+  const tag = (list, tf) => list.map(p => ({ ...p, tf }));
+  const now5 = tag(detectPatterns(M5, e5), "5m"), now15 = tag(detectPatterns(M15, e15), "15m");
+  const found = now5.concat(tag(detectPatterns(M5, e5 - 1), "5m"), now15);
+  const support = found.filter(p => p.bias === wantB && p.str >= 2);
+  const oppose = now5.concat(now15).filter(p => p.bias === oppB && p.str >= 2);
+  const rej = (a, i) => {
+    const k = a.candles[i], P = candleParts(k);
+    if (!P.range) return false;
+    return L ? (P.low >= 0.5 * P.range && k.c >= k.l + 0.6 * P.range) : (P.up >= 0.5 * P.range && k.c <= k.h - 0.6 * P.range);
+  };
+  const rej5 = rej(M5, e5), rej15 = rej(M15, e15);
+  const prev3 = M5.candles.slice(e5 - 3, e5), kc = M5.candles[e5];
+  const micro = L ? (kc.c > Math.max(...prev3.map(k => k.h)) && kc.c > kc.o) : (kc.c < Math.min(...prev3.map(k => k.l)) && kc.c < kc.o);
+  const notes = [];
+  if (support.length) notes.push(support.map(p => p.name + " (" + p.tf + ")").filter((x, i, ar) => ar.indexOf(x) === i).join(", "));
+  if (rej5) notes.push("5m rejection wick " + (L ? "below" : "above"));
+  if (rej15) notes.push("15m rejection wick " + (L ? "below" : "above"));
+  if (micro) notes.push("5m candle closed beyond the last 3 candles");
+  const ok = support.length > 0 || rej5 || rej15 || micro;
+  const text = ok ? notes.join("; ") : oppose.length ? "Against the trade: " + oppose.map(p => p.name + " (" + p.tf + ")").join(", ") : "No " + (L ? "bullish" : "bearish") + " confirmation candle on the last closed 5m or 15m candle";
+  return { ok, text, support, oppose, rej5, rej15, micro };
+}
+
+/* Where to enter. Returns the best zone price is at right now, or null. */
+function entryZone(A, L, price, atr15, brk) {
+  const dirW = L ? "up" : "down", M15 = A["15m"], end15 = M15.candles.length - 2, atr5 = A["5m"].atr[A["5m"].candles.length - 2] || atr15 / 2;
+  /* 1. Retest of a broken level */
+  for (const [tf, list] of brk) for (const e of list) {
+    if (e.type === "break" && e.dir === dirW && e.age <= 40 && (e.status === "retesting" || (e.status === "held" && Math.abs(price - e.p) <= 0.6 * atr15))) {
+      return { type: "RETEST", tf, level: e.p, lo: e.p - 0.2 * atr15, hi: e.p + 0.35 * atr15, edge: e.p,
+        label: "Retest of broken " + (L ? "resistance, now support" : "support, now resistance") + " at " + fp(e.p) + " (" + tf + ")" };
+    }
+  }
+  /* 2. False break (trap) that closed back */
+  for (const [tf, list] of brk) for (const e of list) {
+    if (e.type === "trap" && e.dir === dirW && e.age <= 6 && (L ? price > e.p : price < e.p)) {
+      return { type: "TRAP", tf, level: e.p, lo: e.p, hi: e.p, edge: e.edge,
+        label: "Failed " + (L ? "breakdown" : "breakout") + " at " + fp(e.p) + " (" + tf + "). Price closed back " + (L ? "above" : "below") + " the level." };
+    }
+  }
+  /* 3. Retracement (fibonacci) zone */
+  for (const tf of ["15m", "1h"]) {
+    const r = retraceInfo(A[tf]);
+    if (r && !r.invalid && r.dir === dirW && r.inGolden) {
+      return { type: "PULLBACK", tf, level: (r.golden[0] + r.golden[1]) / 2, lo: r.golden[0], hi: r.golden[1], edge: r.levels[3].p,
+        label: "Pullback into the " + tf + " retracement zone " + fp(r.golden[0]) + " to " + fp(r.golden[1]) + " (" + (r.depthNow * 100).toFixed(0) + "% of the leg retraced)" + (r.conf.length ? ". " + r.conf[0] : "") };
+    }
+  }
+  /* 4. EMA 50 or a support/resistance zone on the 15m chart */
+  const e50 = M15.ema50[end15], e20 = M15.ema20[end15];
+  if (e50 != null && e20 != null && Math.abs(price - e50) <= 0.35 * atr15 && (L ? e20 > e50 : e20 < e50)) {
+    return { type: "PULLBACK", tf: "15m", level: e50, lo: e50 - 0.3 * atr15, hi: e50 + 0.3 * atr15, edge: L ? e50 - 0.4 * atr15 : e50 + 0.4 * atr15, label: "Pullback to the 15m EMA 50 (" + fp(e50) + ")" };
+  }
+  for (const tf of ["15m", "1h"]) {
+    const lv = levelsNear(A[tf]), z = L ? lv.sup[0] : lv.res[0];
+    if (z && (L ? (price - z.p <= 0.5 * atr15 && price >= z.p - 0.2 * atr15) : (z.p - price <= 0.5 * atr15 && price <= z.p + 0.2 * atr15))) {
+      return { type: "PULLBACK", tf, level: z.p, lo: z.p - 0.2 * atr15, hi: z.p + 0.2 * atr15, edge: z.p, label: "At " + tf + " " + (L ? "support" : "resistance") + " zone " + fp(z.p) + " (touched " + z.n + " times)" };
+    }
+  }
+  /* 5. Fresh break with volume (momentum entry) */
+  for (const [tf, list] of brk) for (const e of list) {
+    if (e.type === "break" && e.dir === dirW && e.status === "fresh" && e.vol != null && e.vol >= 1.3 && tf !== "1h") {
+      return { type: "BREAKOUT", tf, level: e.p, lo: e.p, hi: e.p, edge: e.p,
+        label: "Fresh break of " + (L ? "resistance" : "support") + " at " + fp(e.p) + " with " + e.vol.toFixed(1) + "x volume (" + tf + "). Momentum entry, or wait for a retest." };
+    }
+  }
+  return null;
+}
+/* Used when no zone is active: tells the trader where to wait. */
+function pullbackPlan(A, L, price) {
+  const dirW = L ? "up" : "down";
+  for (const tf of ["15m", "1h"]) {
+    const r = retraceInfo(A[tf]);
+    if (r && !r.invalid && r.dir === dirW && r.depthNow < 0.382) {
+      const mid = (r.golden[0] + r.golden[1]) / 2;
+      return "Wait for a pullback into the " + tf + " zone " + fp(r.golden[0]) + " to " + fp(r.golden[1]) + " (" + (Math.abs(price - mid) / price * 100).toFixed(2) + "% away), then look for a " + (L ? "green" : "red") + " confirmation candle." +
+        (r.typicalP != null ? " Recent pullbacks ended near " + fp(r.typicalP) + "." : "");
+    }
+  }
+  const z = (L ? levelsNear(A["15m"]).sup : levelsNear(A["15m"]).res)[0];
+  if (z) return "Watch the 15m " + (L ? "support" : "resistance") + " at " + fp(z.p) + " (" + (Math.abs(price - z.p) / price * 100).toFixed(2) + "% away) for a " + (L ? "bounce" : "rejection") + ".";
+  return "No clear pullback level yet. Stay out until price reaches a zone.";
+}
+function buildLevels(L, price, zone, A, atr15, atr5) {
+  const M5 = A["5m"], end5 = M5.candles.length - 2, recent = M5.candles.slice(end5 - 7, end5 + 1);
+  let sl;
+  if (L) { const sw = Math.min(...recent.map(k => k.l)), edge = Math.min(zone.edge, price); sl = Math.min(edge, sw) - 0.2 * atr5; }
+  else { const sw = Math.max(...recent.map(k => k.h)), edge = Math.max(zone.edge, price); sl = Math.max(edge, sw) + 0.2 * atr5; }
+  let risk = Math.abs(price - sl), capped = null;
+  if (risk < 0.5 * atr15) { risk = 0.5 * atr15; capped = "widened to 0.5 ATR so normal noise does not stop you out"; }
+  else if (risk > 1.5 * atr15) { risk = 1.5 * atr15; capped = "tightened to 1.5 ATR, so the real structure stop is further away and the trade is weaker"; }
+  const d = L ? 1 : -1;
+  return { sl: price - d * risk, tp1: price + d * risk, tp2: price + d * 2 * risk, tp3: price + d * 3 * risk, risk, capped };
+}
+
+function buildSignal(A) {
+  const D = A["1d"], H4 = A["4h"], H1 = A["1h"], M15 = A["15m"], M5 = A["5m"];
+  const end5 = M5.candles.length - 2, end15 = M15.candles.length - 2;
+  const price = M5.candles[M5.candles.length - 1].c;
+  const atr15 = M15.atr[end15] || price * 0.003, atr5 = M5.atr[end5] || price * 0.0015;
+  const td = trendOf(D); // daily: hidden background bias, never shown on its own
+  const htf = sgn(td.dir) + sgn(H4.struct.dir) + sgn(H1.struct.dir);
+  const side = htf >= 2 ? "long" : htf <= -2 ? "short" : null;
+  const lean = side || (htf + sgn(M15.struct.dir) >= 0 ? "long" : "short");
+  const L = lean === "long", want = L ? "up" : "down", opp = L ? "down" : "up", wantB = L ? "bull" : "bear", oppB = L ? "bear" : "bull";
+  const brk = [["15m", detectBreaks(M15)], ["5m", detectBreaks(M5)], ["1h", detectBreaks(H1)]];
+  const zone = entryZone(A, L, price, atr15, brk);
+  const trg = triggerCheck(A, L);
+  const sameBreaks = [], oppBreaks = [];
+  brk.forEach(([tf, list]) => list.forEach(e => {
+    if (e.dir === want && e.age <= 40) sameBreaks.push({ ...e, tf });
+    if (e.type === "break" && e.dir === opp && e.age <= 8 && tf !== "5m") oppBreaks.push({ ...e, tf });
+  }));
+  const rsi5 = M5.rsi[end5], rsi15 = M15.rsi[end15];
+  const rsiOk = rsi5 != null && rsi15 != null && (L ? (rsi15 >= 35 && rsi15 <= 70 && rsi5 < 75) : (rsi15 >= 30 && rsi15 <= 65 && rsi5 > 25));
+  const v5 = M5.volSma[end5] ? M5.candles[end5].v / M5.volSma[end5] : null, v15 = M15.volSma[end15] ? M15.candles[end15].v / M15.volSma[end15] : null;
+  const volOk = (v5 != null && v5 >= 1) || (v15 != null && v15 >= 1);
+  const ln = [["15m last 50", lastN(M15, 50)], ["15m last 100", lastN(M15, 100)], ["1H last 50", lastN(H1, 50)]];
+  const nAgree = ln.filter(x => x[1].bias === want).length, nOpp = ln.filter(x => x[1].bias === opp).length;
+  const macro = macroState(Date.now());
+  const macroOk = macro.bias.label !== (L ? "bearish" : "bullish");
+  const fr = x => x == null ? "n/a" : x.toFixed(0);
+  const fv = x => x == null ? "n/a" : x.toFixed(2) + "x";
+  const bk = sameBreaks.filter(e => e.type === "break")[0] || sameBreaks[0];
+
+  const checks = [
+    { ok: htf * (L ? 1 : -1) >= 2, w: 2, label: "Bigger trend agrees", d: "4H " + dirWord(H4.struct.dir) + ", 1H " + dirWord(H1.struct.dir) + ", plus the daily chart in the background" },
+    { ok: M15.struct.dir === want, w: 1, label: "15 min structure " + (L ? "HH + HL" : "LH + LL"), d: "15m is a " + dirWord(M15.struct.dir) + (M15.struct.shift ? " (structure just shifted)" : "") + ". Last swings: " + (M15.struct.seq.join(" ") || "none") },
+    { ok: !!zone, w: 2, label: "Price is at an entry zone", d: zone ? zone.label : pullbackPlan(A, L, price) },
+    { ok: trg.ok, w: 2, label: "Candle confirmation (5m and 15m)", d: trg.text },
+    { ok: !!bk, w: 1, label: "Break of a key level in your direction", d: bk ? (bk.type === "trap" ? "False break reversed at " : "Break at ") + fp(bk.p) + " on " + bk.tf + ", " + bk.age + " candles ago (" + bk.status + ")" : "No recent break in this direction" },
+    { ok: rsiOk, w: 1, label: "RSI not stretched", d: "15m RSI " + fr(rsi15) + ", 5m RSI " + fr(rsi5) + (L ? " (want 15m 35-70, 5m under 75)" : " (want 15m 30-65, 5m over 25)") },
+    { ok: volOk, w: 1, label: "Volume backs the move", d: "Last closed 5m candle " + fv(v5) + ", 15m candle " + fv(v15) + " of their 20-bar average (want 1.0x or more on one)" },
+    { ok: nAgree >= 2 && nOpp === 0, w: 1, label: "Last 50 and 100 candles agree", d: ln.map(x => x[0] + ": " + x[1].label).join(", ") },
+    { ok: macroOk, w: 1, label: "News and macro mood not against you", d: macro.bias.text }
+  ];
+  const max = checks.reduce((s, x) => s + x.w, 0), score = checks.reduce((s, x) => s + (x.ok ? x.w : 0), 0);
+
+  let lv = null;
+  if (zone) lv = buildLevels(L, price, zone, A, atr15, atr5);
+  const nr15 = levelsNear(M15), nr1 = levelsNear(H1);
+  const resAll = nr15.res.map(z => ({ ...z, tf: "15m" })).concat(nr1.res.map(z => ({ ...z, tf: "1h" }))).sort((a, b) => a.p - b.p);
+  const supAll = nr15.sup.map(z => ({ ...z, tf: "15m" })).concat(nr1.sup.map(z => ({ ...z, tf: "1h" }))).sort((a, b) => b.p - a.p);
+  const near = { r: resAll[0] || null, s: supAll[0] || null };
+  let srNote = "";
+  if (lv) {
+    if (L && near.r && lv.tp2 > near.r.p) srNote = "Resistance at " + fp(near.r.p) + " (" + near.r.tf + ") sits before Target " + (lv.tp1 > near.r.p ? "1" : "2") + ". Consider taking profit there.";
+    if (!L && near.s && lv.tp2 < near.s.p) srNote = "Support at " + fp(near.s.p) + " (" + near.s.tf + ") sits before Target " + (lv.tp1 < near.s.p ? "1" : "2") + ". Consider taking profit there.";
+  }
+  const patsNow = detectPatterns(M5, end5).map(p => ({ ...p, tf: "5m" })).concat(detectPatterns(M15, end15).map(p => ({ ...p, tf: "15m" })));
+  const patBest = patsNow.slice().sort((a, b) => b.str - a.str)[0] || null;
+
+  const htfOk = checks[0].ok;
+  let verdict, cls, reason;
+  if (!side) { verdict = "WAIT"; cls = "mute"; reason = "The bigger trend is not clear. 4H, 1H and the daily background do not agree."; }
+  else if (macro.block) { verdict = "WAIT (NEWS)"; cls = "warn"; reason = macro.block.text; }
+  else if (htfOk && zone && trg.ok && score >= SETUP_MIN && !trg.oppose.length && !oppBreaks.length) {
+    verdict = (L ? "LONG" : "SHORT") + " SETUP"; cls = L ? "up" : "down";
+    reason = "Bigger trend agrees, price is at a zone and a candle confirmed it." + (macro.caution ? " " + macro.caution.text : "");
+  } else if (htfOk && zone && trg.ok && score >= SETUP_MIN) {
+    verdict = "WATCH " + (L ? "LONG" : "SHORT"); cls = "warn";
+    reason = "The setup is ready, but " + (trg.oppose.length ? trg.oppose.map(p => p.name + " (" + p.tf + ")").join(", ") + " points the other way" : "a level just broke against the trade (" + oppBreaks.map(e => fp(e.p) + " " + e.tf).join(", ") + ")") + ". Wait for the next candle.";
+  } else if (htfOk && score >= WATCH_MIN) {
+    verdict = "WATCH " + (L ? "LONG" : "SHORT"); cls = "warn";
+    reason = zone ? "Price is at a zone. Wait for a confirmation candle." : pullbackPlan(A, L, price);
+  } else { verdict = "WAIT"; cls = "mute"; reason = "Not enough checks pass for a scalp."; }
+  return {
+    side, lean, L, verdict, cls, reason, checks, score, max, price, zone, plan: zone ? "" : pullbackPlan(A, L, price),
+    sl: lv && lv.sl, tp1: lv && lv.tp1, tp2: lv && lv.tp2, tp3: lv && lv.tp3, risk: lv && lv.risk, capped: lv && lv.capped,
+    atr15, atr5, macro, near, srNote, rsi15, t5: M5.candles[end5].t, patBest, trg,
+    pat: { supportP: trg.support, opposeP: trg.oppose },
+    struct: { h4: H4.struct, h1: H1.struct, m15: M15.struct, m5: M5.struct }, sameBreaks, oppBreaks
+  };
+}
+
+</script>
+<script>
+"use strict";
+/* Asia, London and New York sessions: open/closed status, timeline and how the current coin behaves in each. */
+const fmtCache = {};
+function localHM(ms, tz) {
+  const f = fmtCache[tz] || (fmtCache[tz] = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" }));
+  const p = {}; f.formatToParts(ms).forEach(x => { p[x.type] = x.value; });
+  let h = +p.hour; if (h === 24) h = 0;
+  return { h, m: +p.minute, day: p.year + "-" + p.month + "-" + p.day };
+}
+function sessionActive(s, ms) { const l = localHM(ms, s.tz); const t = l.h + l.m / 60; return t >= s.from && t < s.to; }
+function sessionInfo(s, now) {
+  const act = sessionActive(s, now); let t = now;
+  for (let i = 1; i <= 48 * 12; i++) { t = now + i * 300000; if (sessionActive(s, t) !== act) break; }
+  return { act, change: t };
+}
+/* Uses 1 hour candles (about 12 days). Sessions are measured from the first to the last candle inside the session window. */
+function sessionStats(c) {
+  const avgV = c.reduce((a, k) => a + k.v, 0) / c.length;
+  return SESSIONS.map(s => {
+    const m = new Map();
+    c.forEach((k, idx) => {
+      if (!sessionActive(s, k.t)) return;
+      const key = localHM(k.t, s.tz).day; let g = m.get(key);
+      if (!g) { g = { o: k.o, c: k.c, h: k.h, l: k.l, v: 0, n: 0, t: k.t, last: idx }; m.set(key, g); }
+      g.c = k.c; g.h = Math.max(g.h, k.h); g.l = Math.min(g.l, k.l); g.v += k.v; g.n++; g.last = idx;
+    });
+    const arr = [...m.values()].sort((a, b) => a.t - b.t);
+    const cur = arr[arr.length - 1] || null;
+    const live = cur && cur.last === c.length - 1 ? cur : null;
+    const full = arr.filter(g => g !== live && g.n >= 8).slice(-7);
+    const mean = f => full.length ? full.reduce((a, g) => a + f(g), 0) / full.length : null;
+    const hrs = arr.reduce((a, g) => a + g.n, 0), vs = arr.reduce((a, g) => a + g.v, 0);
+    return { s, live: !!live, cur, curMove: cur ? (cur.c - cur.o) / cur.o * 100 : null,
+      avgMove: mean(g => (g.c - g.o) / g.o * 100), avgRange: mean(g => (g.h - g.l) / g.o * 100),
+      up: full.filter(g => g.c > g.o).length, nFull: full.length, volIdx: hrs ? (vs / hrs) / avgV : null };
+  });
+}
+function sessionLine() {
+  const now = Date.now();
+  const open = SESSIONS.filter(s => sessionActive(s, now));
+  if (!open.length) {
+    const nxt = SESSIONS.map(s => ({ s, i: sessionInfo(s, now) })).sort((a, b) => a.i.change - b.i.change)[0];
+    return "Between sessions. " + nxt.s.name + " opens in " + fmtDur(nxt.i.change - now) + ".";
+  }
+  const names = open.map(s => s.name.split(" (")[0]).join(" + ");
+  const first = open.map(s => ({ s, i: sessionInfo(s, now) })).sort((a, b) => a.i.change - b.i.change)[0];
+  return "Now: " + names + " open" + (open.length > 1 ? " (overlap, usually the busiest hours)" : "") + ". " + first.s.name.split(" (")[0] + " closes in " + fmtDur(first.i.change - now) + ".";
+}
+function renderSessions(targetId) {
+  const el = $(targetId); if (!el || !state.sessStats.length) return;
+  const now = Date.now();
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const base = d0.getTime(), pct = (now - base) / 864e5 * 100;
+  const rows = SESSIONS.map(s => {
+    let cells = "";
+    for (let i = 0; i < 96; i++) cells += '<i class="' + (sessionActive(s, base + i * 900000 + 450000) ? "on" : "") + '"></i>';
+    return '<div class="tl-row"><span class="tl-name">' + esc(s.name) + '</span><div class="tl-bar" style="--c:var(' + s.color + ')">' + cells + '<b class="now" style="left:' + pct.toFixed(2) + '%"></b></div></div>';
+  }).join("");
+  const stat = state.sessStats.map(x => {
+    const inf = sessionInfo(x.s, now);
+    const status = inf.act ? '<span class="pill up">OPEN</span> <span class="mute-t">closes ' + hhmm(inf.change) + ' (in ' + fmtDur(inf.change - now) + ')</span>'
+      : '<span class="pill mute">CLOSED</span> <span class="mute-t">opens ' + hhmm(inf.change) + ' (in ' + fmtDur(inf.change - now) + ')</span>';
+    return '<tr><td><b>' + esc(x.s.name) + '</b></td><td>' + status + '</td>' +
+      '<td class="num">' + pc(x.curMove) + ' <span class="mute-t">' + (x.live ? "now" : "last") + '</span></td>' +
+      '<td class="num">' + pc(x.avgMove) + '</td><td class="num">' + (x.avgRange == null ? "n/a" : x.avgRange.toFixed(2) + "%") + '</td>' +
+      '<td class="num">' + (x.nFull ? x.up + " of " + x.nFull : "n/a") + '</td><td class="num">' + (x.volIdx == null ? "n/a" : x.volIdx.toFixed(2) + "x") + '</td></tr>';
+  }).join("");
+  const withVol = state.sessStats.filter(x => x.volIdx != null), withRange = state.sessStats.filter(x => x.avgRange != null);
+  const busiest = withVol.slice().sort((a, b) => b.volIdx - a.volIdx)[0], widest = withRange.slice().sort((a, b) => b.avgRange - a.avgRange)[0];
+  el.innerHTML =
+    '<div class="status-row"><h2 style="margin:0">Market sessions · ' + esc(coinOf(state.symbol)) + '</h2><span class="sub" style="margin:0">' + esc(sessionLine()) + '</span></div>' +
+    rows +
+    '<div class="tl-axis"><span></span><div><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div></div>' +
+    '<div class="note" style="margin:6px 0 12px">Bars show today in your local time. The black line is now. Windows: Tokyo 09:00-18:00, London 08:00-17:00, New York 08:00-17:00, each in its own city time.</div>' +
+    '<div class="tbl"><table><thead><tr><th>Session</th><th>Status</th><th>This session</th><th>Avg move (7 sessions)</th><th>Avg range</th><th>Up sessions</th><th>Volume vs average</th></tr></thead><tbody>' + stat + '</tbody></table></div>' +
+    (busiest && widest ? '<div class="note">For ' + esc(coinOf(state.symbol)) + ', ' + esc(busiest.s.name) + ' has had the most volume per hour (' + busiest.volIdx.toFixed(2) + 'x average) and ' + esc(widest.s.name) + ' the widest price swings (' + widest.avgRange.toFixed(2) + '% per session). Based on the last 12 days of hourly candles. For scalping, the London and New York overlap is usually the best window.</div>' : '');
+}
+
+</script>
+<script>
+"use strict";
+/* Entry alerts: sound, browser pop-up, vibration and Telegram. Only fires for new setups, once per candle. */
+let actx = null;
+function beep() {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+    [660, 880].forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain(), t0 = actx.currentTime + i * 0.18;
+      o.type = "sine"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+      o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0 + 0.18);
+    });
+  } catch (e) { /* sound not available */ }
+}
+async function tgSend(text) {
+  const tok = store.get("tgTok", "").trim(), chat = store.get("tgChat", "").trim();
+  if (!tok || !chat) return "Telegram not set";
+  if (!/^\d+:[A-Za-z0-9_-]+$/.test(tok)) return "Telegram token looks wrong";
+  try {
+    const r = await fetch("https://api.telegram.org/bot" + tok + "/sendMessage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chat, text }) });
+    const j = await r.json();
+    return j.ok ? "Telegram sent" : "Telegram error: " + (j.description || r.status);
+  } catch (e) { return "Telegram failed (" + (e && e.message ? e.message : "network") + ")"; }
+}
+function loadAlertLog() { try { return JSON.parse(store.get("alog", "[]")); } catch (e) { return []; } }
+async function notify(title, body) {
+  const out = [];
+  state.alerts = [{ t: Date.now(), title, body }].concat(loadAlertLog()).slice(0, 15);
+  store.set("alog", JSON.stringify(state.alerts));
+  if (store.get("aSound", "1") === "1") { beep(); out.push("sound"); }
+  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) { /* ignore */ }
+  try {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") { new Notification(title, { body, tag: title }); out.push("pop-up"); }
+  } catch (e) { /* phones block this */ }
+  try { document.title = "● " + title; } catch (e) { /* ignore */ }
+  const tg = await tgSend(title + "\n" + body);
+  if (tg === "Telegram sent") out.push("Telegram"); else if (tg !== "Telegram not set") out.push(tg);
+  if (typeof renderAlertLog === "function") renderAlertLog();
+  return out;
+}
+const seenAlerts = (() => { try { return JSON.parse(store.get("seen", "{}")); } catch (e) { return {}; } })();
+function markSeen(key) {
+  seenAlerts[key] = Date.now();
+  Object.keys(seenAlerts).forEach(k => { if (Date.now() - seenAlerts[k] > 2 * 86400e3) delete seenAlerts[k]; });
+  store.set("seen", JSON.stringify(seenAlerts));
+}
+function collectAlert(pair, sig) {
+  if (sig.verdict.indexOf("SETUP") < 0) return null;
+  const key = pair + "|" + (sig.L ? "L" : "S") + "|" + (sig.zone ? sig.zone.type : "") + "|" + sig.t5;
+  return seenAlerts[key] ? null : { pair, sig, key };
+}
+function sessionAllowed() {
+  const now = Date.now();
+  const act = SESSIONS.filter(s => sessionActive(s, now)).map(s => s.id);
+  return (act.length ? act : ["off"]).some(id => store.get("s_" + id, "1") === "1");
+}
+function alertBody(a) {
+  const s = a.sig;
+  return (s.zone ? s.zone.type + ": " + s.zone.label + "\n" : "") + "Entry " + fp(s.price) + "\nStop loss " + fp(s.sl) + "\nTarget 1 " + fp(s.tp1) + "\nTarget 2 " + fp(s.tp2) + "\nTarget 3 " + fp(s.tp3) +
+    "\nScore " + s.score + "/" + s.max + (s.macro.caution ? "\nNews soon: use half size" : "") +
+    (s.pat.supportP.length ? "\nCandle: " + s.pat.supportP.map(p => p.name + " (" + p.tf + ")").join(", ") : "") + (s.srNote ? "\n" + s.srNote : "");
+}
+async function sendAlerts(list) {
+  if (!list.length || store.get("aOn", "0") !== "1" || !sessionAllowed()) return;
+  list.forEach(a => markSeen(a.key));
+  if (list.length <= 3) for (const a of list) await notify((a.sig.L ? "LONG" : "SHORT") + " setup: " + coinOf(a.pair), alertBody(a));
+  else await notify(list.length + " new setups", list.map(a => coinOf(a.pair) + " " + (a.sig.L ? "long" : "short")).join(", "));
+}
+function renderAlertLog() {
+  const on = store.get("aOn", "0") === "1";
+  const p = $("alertPill"); if (p) { p.textContent = on ? "ON" : "OFF"; p.className = "pill " + (on ? "up" : "mute"); }
+  const el = $("alertLog"); if (!el) return;
+  const log = loadAlertLog();
+  el.innerHTML = log.length ? log.map(a => "<li><b>" + esc(a.title) + "</b> <span class='mute-t'>" + hhmm(a.t) + "</span><small>" + esc(a.body) + "</small></li>").join("") : "";
+}
+function alertStatusText() {
+  const parts = [];
+  parts.push("Sound: " + (store.get("aSound", "1") === "1" ? "on" : "off"));
+  parts.push("Browser pop-up: " + (typeof Notification === "undefined" ? "not supported here" : Notification.permission === "granted" ? "allowed" : Notification.permission === "denied" ? "blocked in browser settings" : "not allowed yet"));
+  parts.push("Telegram: " + (store.get("tgTok", "") && store.get("tgChat", "") ? "set" : "not set"));
+  return parts.join(" · ");
+}
+/* Alerts page controls. */
+function setupAlertUi() {
+  const bind = (id, key, def, isCheck, after) => {
+    const el = $(id); if (!el) return;
+    if (isCheck) el.checked = store.get(key, def) === "1"; else el.value = store.get(key, def);
+    el.addEventListener("change", () => { store.set(key, isCheck ? (el.checked ? "1" : "0") : el.value.trim()); if (after) after(el); $("alertMsg").textContent = alertStatusText(); renderAlertLog(); });
+  };
+  bind("aOn", "aOn", "0", true, async el => {
+    if (el.checked) {
+      beep();
+      try { if (typeof Notification !== "undefined" && Notification.permission === "default") await Notification.requestPermission(); } catch (e) { /* ignore */ }
+      $("alertMsg").textContent = alertStatusText();
+    }
+  });
+  bind("aSound", "aSound", "1", true);
+  bind("s_asia", "s_asia", "1", true); bind("s_london", "s_london", "1", true); bind("s_ny", "s_ny", "1", true); bind("s_off", "s_off", "1", true);
+  bind("sOpen", "sOpen", "0", true);
+  bind("tgTok", "tgTok", "", false); bind("tgChat", "tgChat", "", false);
+  $("aTest").addEventListener("click", async () => {
+    $("aTest").disabled = true;
+    try { if (typeof Notification !== "undefined" && Notification.permission === "default") await Notification.requestPermission(); } catch (e) { /* ignore */ }
+    const out = await notify("Test alert", "If you can hear or see this, alerts work.");
+    $("alertMsg").textContent = "Test sent via: " + (out.length ? out.join(", ") : "nothing (turn on sound, allow pop-ups or add Telegram)") + ". " + alertStatusText();
+    $("aTest").disabled = false;
+  });
+  $("alertMsg").textContent = alertStatusText();
+  renderAlertLog();
+}
+function checkSessionOpens() {
+  const now = Date.now();
+  SESSIONS.forEach(s => {
+    const act = sessionActive(s, now);
+    if (state.prevAct[s.id] === false && act && store.get("aOn", "0") === "1" && store.get("sOpen", "0") === "1") {
+      const setups = state.scan.rows.filter(r => r.sig.verdict.indexOf("SETUP") > -1).map(r => coinOf(r.c.pair) + " " + (r.sig.L ? "long" : "short"));
+      notify(s.name + " session opened", setups.length ? "Current setups: " + setups.join(", ") : "No setups right now.");
+    }
+    state.prevAct[s.id] = act;
+  });
+}
+
+</script>
+<script>
+"use strict";
+/* Page frame shared by every page: title, menu, symbol box, banner, timers. Each page calls boot(). */
+const NAV = [["index.html", "Signals"], ["chart.html", "Chart"], ["analysis.html", "Analysis"], ["tradingview.html", "TradingView"], ["sessions.html", "Sessions"],
+  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["alerts.html", "Alerts"]];
+
+function showBanner(msg) { const b = $("banner"); if (!b) return; b.hidden = !msg; b.textContent = msg; }
+function buildShell(cfg) {
+  const nav = NAV.map(([href, label]) => '<a href="' + href + '"' + (href === cfg.file ? ' aria-current="page"' : '') + '>' + label + '</a>').join("");
+  $("app").innerHTML = '<div class="wrap">' +
+    '<header class="top"><div><h1>Crypto Trend Desk</h1><div class="sub" style="margin:0">Scalping and intraday desk for coins above $50M market cap</div></div>' +
+    (cfg.symbolBox ? '<div class="controls"><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
+      '<button id="go" class="primary">Analyze</button><label class="chk"><input type="checkbox" id="auto"> Refresh every minute</label></div>' : '') +
+    '</header><nav class="nav" aria-label="Pages">' + nav + '</nav><div id="banner" class="banner" hidden></div><div id="capNote" class="sub" style="margin:0"></div>' +
+    '<main id="main" style="display:flex;flex-direction:column;gap:16px"></main>' +
+    '<footer>This tool applies fixed rules to public Binance candles, CoinGecko market caps and public news feeds. It does not predict the market and it is not financial advice. Test any idea on paper or with very small size first, and never risk money you cannot afford to lose.</footer></div>';
+}
+function fillSymList() {
+  const dl = $("symlist"); if (!dl) return;
+  dl.innerHTML = state.uni.list.slice(0, 120).map(c => '<option value="' + c.pair + '" label="' + esc(c.name) + (c.mc ? " " + fmtCap(c.mc) : "") + '"></option>').join("");
+}
+let autoTimer = null;
+function wireSymbolBox(cfg) {
+  const go = async () => {
+    state.symbol = normalizePair($("sym").value); $("sym").value = state.symbol;
+    $("go").disabled = true; $("go").textContent = "Loading...";
+    await loadSymbol(); cfg.render(); if (cfg.afterSymbol) cfg.afterSymbol();
+    $("go").disabled = false; $("go").textContent = "Analyze";
+  };
+  $("go").addEventListener("click", go);
+  $("sym").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+  $("auto").addEventListener("change", e => { clearInterval(autoTimer); if (e.target.checked) autoTimer = setInterval(go, 60000); });
+}
+let tickN = 0;
+function startTick() {
+  setInterval(() => {
+    document.querySelectorAll(".cdn").forEach(el => { el.textContent = fmtCountdown(+el.dataset.ms - Date.now()); });
+    if (++tickN % 30 === 0) { checkSessionOpens(); if (typeof onSlowTick === "function") onSlowTick(); }
+  }, 1000);
+}
+/* cfg: file, title, skeleton (html), data (needs candles), symbolBox, render(), init(), after(), afterSymbol() */
+async function boot(cfg) {
+  document.title = cfg.title + " | Crypto Trend Desk";
+  buildShell(cfg);
+  state.symbol = store.get("symbol", "BTCUSDT"); state.chartTf = store.get("chartTf", "15m");
+  if (!SHOWN.some(t => t.id === state.chartTf)) state.chartTf = "15m";
+  if (cfg.symbolBox) $("sym").value = state.symbol;
+  SESSIONS.forEach(s => { state.prevAct[s.id] = sessionActive(s, Date.now()); });
+  if (cfg.data) {
+    $("main").innerHTML = '<div class="card sub">Loading coin list and candles...</div>';
+    await loadUniverse(); fillSymList(); $("capNote").textContent = state.capMsg || "";
+    if (cfg.symbolBox) wireSymbolBox(cfg);
+    await loadSymbol();
+  }
+  $("main").innerHTML = cfg.skeleton || "";
+  if (cfg.init) cfg.init();
+  cfg.render();
+  startTick();
+  if (cfg.after) cfg.after();
+}
+
+</script>
+<script>
+"use strict";
+/* Macro pages: CPI, US jobs, Fed rate decision, US news, world news. One file, the page is chosen with <body data-page="...">. */
+const PAGE = document.body.dataset.page;
+
+const FED_HISTORY = [["28 Oct 2026", "Hold", "3.75-4.00", "10 to 2"], ["16 Sep 2026", "Raise 0.25", "3.75-4.00", "12 to 0"], ["29 Jul 2026", "Hold", "3.50-3.75", "9 to 3"], ["17 Jun 2026", "Hold", "3.50-3.75", "12 to 0"],
+  ["29 Apr 2026", "Hold", "3.50-3.75", "8 to 4"], ["18 Mar 2026", "Hold", "3.50-3.75", "see statement"], ["28 Jan 2026", "Hold", "3.50-3.75", "10 to 2"]];
+const SNAP = [["US 10-year yield", "5.04%"], ["US 2-year yield", "4.70%"], ["WTI crude oil", "$102.78"], ["EUR/USD", "about 1.115"], ["US GDP, first half", "2.4%"]];
+
+const RULES = {
+  cpi: ["Do not open new scalps from 45 minutes before to 60 minutes after the release. Spreads widen and wicks run both ways.", "Hotter than forecast usually pushes crypto down, cooler pushes it up. The first move is often reversed.", "Wait for the 15m candle after the release to close, then trade the retest of the level it broke.", "Core CPI (without food and energy) matters more to the Fed than the headline number."],
+  jobs: ["Do not open new scalps from 45 minutes before to 60 minutes after the release.", "Stronger jobs mean higher rate fear (bearish), weaker jobs mean lower rate fear (bullish). Very weak jobs can flip to recession fear.", "Look at revisions to the previous months too. They can change the story.", "The unemployment rate and wages move the Fed view as much as the job count."],
+  fed: ["Avoid new scalps from 90 minutes before to 120 minutes after the decision. The press conference starts 30 minutes later and can reverse the move.", "What matters is the surprise: the decision against market odds, plus the tone and the dot plot. A hold that was fully expected moves little.", "Hawkish (fewer cuts or more hikes) is bearish for crypto, dovish is bullish.", "After the event, let the 1H structure show direction. Trade pullbacks and retests, not the first spike."]
+};
+const FIELDS = {
+  cpi: [["cpiHP", "Headline CPI previous (% yearly)"], ["cpiHF", "Headline CPI forecast"], ["cpiHA", "Headline CPI actual"], ["cpiCP", "Core CPI previous"], ["cpiCF", "Core CPI forecast"], ["cpiCA", "Core CPI actual"]],
+  jobs: [["jobsA", "Jobs added, actual (thousand)"], ["jobsF", "Jobs forecast (thousand)"], ["jobsP", "Jobs previous"], ["uA", "Unemployment actual (%)"], ["uP", "Unemployment previous (%)"]],
+  fed: [["fedLo", "Rate range low (%)"], ["fedHi", "Rate range high (%)"], ["fedExp", "Expected change (bp, cut is minus)"], ["fedAct", "Actual change (bp)"], ["fedOdds", "Market odds for this outcome (%)"]]
+};
+const TITLE = { cpi: "US CPI inflation", jobs: "US jobs report", fed: "US Fed interest-rate decision", "us-news": "US news", "world-news": "World news" };
+
+function scoreFor(p) { return p === "cpi" ? cpiScore() : p === "jobs" ? jobsScore() : fedScore(); }
+function nextOf(type) { const now = Date.now(); return macroState(now).events.find(e => e.type === type && e.ms > now) || null; }
+function lastOfType(type) { const now = Date.now(); return macroState(now).events.filter(e => e.type === type && e.ms <= now).pop() || null; }
+
+function statusCard() {
+  const now = Date.now(), m = macroState(now);
+  let h = '<h2>Trading status right now</h2>';
+  if (m.block) h += '<div class="verdict down">AVOID NEW SCALPS</div><div class="sub">' + esc(m.block.text) + '</div>';
+  else if (m.caution) h += '<div class="verdict warn">CAUTION</div><div class="sub">' + esc(m.caution.text) + '</div>';
+  else h += '<div class="verdict up">NO NEWS BLOCK</div><div class="sub">No high-impact release inside the trade windows.</div>';
+  if (m.next) h += '<div class="kv"><span>Next big event</span><span>' + esc(m.next.title) + ' · ' + esc(dayTime(m.next.ms)) + '</span></div><div class="kv"><span>Countdown</span><span class="cd cdn" data-ms="' + m.next.ms + '">' + fmtCountdown(m.next.ms - now) + '</span></div>';
+  h += '<div class="kv"><span>Macro and news mood</span><span class="' + (m.bias.label === "bullish" ? "up-t" : m.bias.label === "bearish" ? "down-t" : "mute-t") + '"><b>' + m.bias.label + '</b></span></div>';
+  m.bias.parts.forEach(p => { h += '<div class="kv"><span>' + esc(p.label) + '</span><span class="' + (p.s > 0 ? "up-t" : p.s < 0 ? "down-t" : "mute-t") + '">' + (p.s > 0 ? "+" : "") + p.s + '</span></div>'; });
+  return h + '<div class="note">The Signals page uses this: a setup is blocked inside an avoid window and loses a point when the mood is against the trade.</div>';
+}
+function scoreCard(p) {
+  const sc = scoreFor(p), nx = nextOf(p), lt = lastOfType(p);
+  let h = '<h2>' + TITLE[p] + '</h2>';
+  h += '<div class="kv"><span>Next release</span><span>' + (nx ? esc(dayTime(nx.ms)) + ' · <span class="cdn" data-ms="' + nx.ms + '">' + fmtCountdown(nx.ms - Date.now()) + '</span>' : 'not in the list') + '</span></div>';
+  h += '<div class="kv"><span>Last release</span><span>' + (lt ? esc(lt.title) + ' · ' + esc(ago(lt.ms)) : 'n/a') + '</span></div>';
+  if (sc) h += '<div class="verdict ' + (sc.s > 0 ? "up" : sc.s < 0 ? "down" : "warn") + '" style="margin-top:10px">' + (sc.s > 0 ? "BULLISH " : sc.s < 0 ? "BEARISH " : "NEUTRAL ") + (sc.s > 0 ? "+" : "") + sc.s + ' / 2</div><div class="sub">' + esc(sc.text) + '</div>';
+  else h += '<div class="sub">Fill in the numbers on the right to see the reading.</div>';
+  return h + '<div class="note">The score only counts in the signal for 72 hours after the release (Fed: 7 days).</div>';
+}
+function inputsCard(p) {
+  let h = '<h2>Numbers (edit after each release)</h2><div class="field">' + FIELDS[p].map(([k, l]) => '<label>' + l + '<input data-k="' + k + '" inputmode="decimal" value="' + esc(val(k)) + '"></label>').join("");
+  if (p === "fed") h += '<label>Tone of the statement<select data-k="fedTone">' + ["hawkish", "neutral", "dovish"].map(o => '<option' + (val("fedTone") === o ? " selected" : "") + '>' + o + '</option>').join("") + '</select></label>';
+  h += '</div><div class="note">Pre-filled from public news pages on 30 Oct 2026. They may be out of date. Check the official source (' + (p === "cpi" || p === "jobs" ? "bls.gov" : "federalreserve.gov") + ') and type the real numbers.</div>';
+  return h;
+}
+function rulesCard(p) { return '<h2>How to trade it</h2><ul class="rules">' + RULES[p].map(r => '<li>' + esc(r) + '</li>').join("") + '</ul>'; }
+function eventsCard(types) { return '<h2>Calendar</h2>' + eventsTable(types, false) + '<div class="note">Times are shown in your local time. Dates in js/macro.js come from the BLS and Federal Reserve calendars. Update them when new dates are published.</div>'; }
+function snapCard() {
+  return '<h2>Market snapshot</h2><div class="tbl"><table style="min-width:0"><tbody>' + SNAP.map(r => '<tr><td>' + r[0] + '</td><td class="num">' + r[1] + '</td></tr>').join("") + '</tbody></table></div>' +
+    '<div class="note">As of 28 Oct 2026, from secondary web sources. Check a live source before trading. Higher yields and a strong dollar usually press crypto, high oil pushes inflation fear.</div>';
+}
+function fedHistoryCard() {
+  return '<h2>Recent Fed decisions</h2><div class="tbl"><table><thead><tr><th>Meeting</th><th>Decision</th><th>Range after</th><th>Vote</th></tr></thead><tbody>' + FED_HISTORY.map(r => '<tr>' + r.map(c => '<td>' + esc(c) + '</td>').join("") + '</tr>').join("") + '</tbody></table></div>' +
+    '<div class="note">Entries were collected from news summaries and may contain mistakes. Verify at federalreserve.gov.</div>';
+}
+function newsCards(kinds) {
+  return kinds.map(([k, t]) => '<section class="card"><h2>' + t + '</h2><div data-news="' + k + '">' + newsListHtml(k) + '</div></section>').join("");
+}
+function refreshNews() { document.querySelectorAll("[data-news]").forEach(el => { el.innerHTML = newsListHtml(el.dataset.news); }); }
+
+function renderMacro() {
+  const p = PAGE, el = $("main");
+  if (p === "cpi" || p === "jobs" || p === "fed") {
+    el.innerHTML = '<div class="grid"><section class="card" id="mScore">' + scoreCard(p) + '</section><section class="card" id="mIn">' + inputsCard(p) + '</section></div>' +
+      '<div class="grid"><section class="card" id="mStatus">' + statusCard() + '</section><section class="card">' + rulesCard(p) + '</section></div>' +
+      '<section class="card">' + eventsCard([p]) + '</section>' + (p === "fed" ? '<section class="card">' + fedHistoryCard() + '</section>' : '') +
+      '<section class="card"><h2>Related headlines</h2><div data-news="us">' + newsListHtml("us") + '</div></section>';
+    el.querySelectorAll("[data-k]").forEach(i => i.addEventListener("change", () => { setVal(i.dataset.k, i.value.trim()); $("mScore").innerHTML = scoreCard(p); $("mStatus").innerHTML = statusCard(); }));
+  } else if (p === "us-news") {
+    el.innerHTML = '<div class="grid"><section class="card" id="mStatus">' + statusCard() + '</section><section class="card">' + snapCard() + '</section></div>' +
+      '<section class="card">' + eventsCard(null) + '</section>' + newsCards([["us", "US headlines (Fed, inflation, jobs, tariffs, Treasury, SEC)"], ["crypto", "Crypto headlines"]]);
+  } else {
+    el.innerHTML = '<div class="grid"><section class="card" id="mStatus">' + statusCard() + '</section><section class="card">' + snapCard() + '</section></div>' +
+      '<section class="card"><h2>What moves the market</h2><ul class="rules"><li>Wars, ceasefires and sanctions: oil jumps, risk assets usually fall first, then recover if the news fades.</li><li>OPEC and oil: high oil feeds inflation fear and keeps rates high.</li><li>China, ECB and Bank of Japan decisions: dollar and yield moves flow into crypto.</li><li>Bank failures and recession news: sharp sell-off, then rate-cut hopes can lift crypto.</li><li>Exchange hacks and regulation (SEC, ETF decisions): crypto-specific, fast moves.</li></ul></section>' +
+      newsCards([["world", "World headlines (war, oil, central banks, trade, recession)"], ["crypto", "Crypto headlines"]]);
+  }
+}
+async function afterMacro() {
+  const need = PAGE === "world-news" ? ["crypto", "world"] : ["crypto", "us"];
+  for (const k of need) { await loadNews(k, false); refreshNews(); }
+  if (PAGE === "us-news" || PAGE === "world-news" || PAGE === "cpi" || PAGE === "jobs" || PAGE === "fed") { const s = $("mStatus"); if (s) s.innerHTML = statusCard(); }
+}
+boot({ file: PAGE + ".html", title: TITLE[PAGE], data: false, symbolBox: false, render: renderMacro, after: afterMacro });
+
+</script>
 </body>
 </html>
