@@ -15,3 +15,5 @@ Pages: Signals (index), Chart, Analysis, TradingView, Sessions, CPI, US jobs, Fe
 Not financial advice. Test on paper first.
 
 New: 4H levels are confirmed on the 15m chart and 1H levels on the 5m chart (reversal or trend break). Order blocks, breaker blocks, FVG, BOS/CHoCH, liquidity sweeps, equal highs/lows and 16 chart patterns are marked and used in the signal. Each signal shows its timeframe.
+
+Backtest page (backtest.html): downloads real Binance history in your browser and replays the signal engine candle by candle.
