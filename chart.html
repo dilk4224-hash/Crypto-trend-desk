@@ -613,6 +613,500 @@ function retraceInfo(a) {
 </script>
 <script>
 "use strict";
+/* Structure events (BOS / CHoCH), order blocks, liquidity, and 4H / 1H key levels with lower-timeframe candle confirmation.
+   Every function caches its result on the analysis object (a._xxx) or on the set of analyses (A._xxx). */
+
+/* Which lower timeframe confirms a zone from a higher one. */
+const CONF_TF = { "4h": "15m", "1h": "5m", "15m": "5m", "5m": "5m" };
+const TF_LABEL = { "5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "Daily" };
+const tfl = id => TF_LABEL[id] || id;
+function atrAt(a, i) {
+  const n = a.candles.length;
+  return a.atr[Math.min(Math.max(i, 0), n - 1)] || a.atr[n - 2] || a.candles[n - 1].c * 0.002;
+}
+const ovl = (k, lo, hi) => k.l <= hi && k.h >= lo;
+
+/* ---------- BOS and CHoCH ---------- */
+/* BOS = a close beyond the last swing high/low in the direction of the trend (continuation).
+   CHoCH = a close beyond the last swing against the trend (first sign of reversal). */
+function structureEvents(a) {
+  if (a._ev) return a._ev;
+  const c = a.candles, n = c.length, end = n - 2, k = a.tf.k, sw = a.swings, evs = [];
+  let tr = null, lastH = null, lastL = null, si = 0;
+  const used = new Set();
+  for (let i = 0; i <= end; i++) {
+    while (si < sw.length && sw[si].i + k <= i) { const s = sw[si++]; if (s.type === "H") lastH = s; else lastL = s; }
+    const atr = atrAt(a, i), cl = c[i].c;
+    let dir = null, brk = null, other = null;
+    if (lastH && !used.has(lastH) && cl > lastH.p + 0.1 * atr) { dir = "up"; brk = lastH; other = lastL; }
+    else if (lastL && !used.has(lastL) && cl < lastL.p - 0.1 * atr) { dir = "down"; brk = lastL; other = lastH; }
+    if (!dir) continue;
+    used.add(brk);
+    const kind = tr && tr !== dir ? "CHoCH" : "BOS", prev = evs[evs.length - 1], tags = [];
+    if (prev && prev.dir === dir && prev.kind === kind) tags.push(kind === "BOS" ? "multiple BOS (strong trend)" : "multiple CHoCH (weak structure)");
+    if (kind === "BOS" && prev && prev.kind === "CHoCH" && prev.dir === dir) tags.push("BOS after CHoCH (reversal confirmed)");
+    if (kind === "CHoCH" && prev && prev.kind === "BOS") tags.push("CHoCH after BOS (trend tiring)");
+    if (sw.some(s => s !== brk && s.type === brk.type && s.i < brk.i && s.i >= brk.i - 60 && Math.abs(s.p - brk.p) <= 0.15 * atr)) tags.push(dir === "up" ? "equal highs broken" : "equal lows broken");
+    if (other) for (let j = Math.max(0, i - 12); j < i; j++) {
+      if (dir === "up" ? (c[j].l < other.p && c[j].c > other.p) : (c[j].h > other.p && c[j].c < other.p)) { tags.push("liquidity sweep before the break"); break; }
+    }
+    if (i >= 26) {
+      let hh = -Infinity, ll = Infinity;
+      for (let j = i - 25; j < i; j++) { hh = Math.max(hh, c[j].h); ll = Math.min(ll, c[j].l); }
+      if (hh - ll <= 3.5 * atr) tags.push("break out of a range");
+    }
+    evs.push({ kind, dir, i, t: c[i].t, p: brk.p, swing: brk, other, tags, name: (dir === "up" ? "Bullish " : "Bearish ") + kind,
+      meaning: kind === "BOS" ? (dir === "up" ? "uptrend continuation" : "downtrend continuation") : "trend reversal" });
+    tr = dir;
+  }
+  /* retest of the broken level */
+  evs.forEach(e => {
+    const up = e.dir === "up"; let st = "waiting";
+    for (let j = e.i + 1; j <= n - 1; j++) {
+      const q = c[j], atr = atrAt(a, e.i);
+      if (j <= end && (up ? q.c < e.p - 0.5 * atr : q.c > e.p + 0.5 * atr)) { st = "failed"; break; }
+      if (up ? (q.l <= e.p + 0.35 * atr && q.c >= e.p - 0.15 * atr) : (q.h >= e.p - 0.35 * atr && q.c <= e.p + 0.15 * atr)) { st = j >= end ? "retesting" : "retested"; if (j >= end) break; }
+    }
+    e.retest = st; e.age = end - e.i;
+  });
+  return (a._ev = evs);
+}
+
+/* ---------- Order blocks ---------- */
+/* An order block is the last opposite candle before the move that broke structure (BOS or CHoCH).
+   It stays valid until price closes through it, or after it has been tested twice. A broken one becomes a breaker block. */
+function sessionOpenTag(t) {
+  for (const s of SESSIONS) {
+    const l = localHM(t, s.tz), m = l.h * 60 + l.m - s.from * 60;
+    if (m >= 0 && m <= 120) return s.name.split(" (")[0] + " open";
+  }
+  return null;
+}
+function orderBlocksOf(a) {
+  if (a._ob) return a._ob;
+  const c = a.candles, n = c.length, end = n - 2, out = [], seen = new Set(), id = a.tf.id;
+  structureEvents(a).forEach(e => {
+    if (e.i < end - 260) return;
+    const up = e.dir === "up";
+    let m = Math.max(0, Math.max(e.swing.i, e.i - 30)), ext = up ? Infinity : -Infinity;
+    for (let q = m; q <= e.i; q++) if (up ? c[q].l < ext : c[q].h > ext) { ext = up ? c[q].l : c[q].h; m = q; }
+    let j = m;
+    for (let q = m; q >= Math.max(0, m - 4); q--) if (up ? c[q].c < c[q].o : c[q].c > c[q].o) { j = q; break; }
+    const key = j + (up ? "u" : "d"); if (seen.has(key)) return; seen.add(key);
+    const atr = atrAt(a, j);
+    let ext2 = up ? -Infinity : Infinity;
+    for (let q = j + 1; q <= e.i; q++) ext2 = up ? Math.max(ext2, c[q].h) : Math.min(ext2, c[q].l);
+    const disp = up ? ext2 - c[j].l : c[j].h - ext2;
+    if (!(disp >= 1.5 * atr)) return;
+    let lo = c[j].l, hi = c[j].h;
+    if (hi - lo > 2.5 * atr) { lo = Math.min(c[j].o, c[j].c); hi = Math.max(c[j].o, c[j].c); }
+    if (hi - lo > 2.5 * atr || hi - lo < 0.05 * atr) return;
+    let fvg = null;
+    for (let q = j + 1; q < e.i && !fvg; q++) {
+      if (up && c[q - 1].h < c[q + 1].l) fvg = { lo: c[q - 1].h, hi: c[q + 1].l, i: q };
+      if (!up && c[q - 1].l > c[q + 1].h) fvg = { lo: c[q + 1].h, hi: c[q - 1].l, i: q };
+    }
+    let broken = null, touches = 0, inz = false;
+    for (let q = e.i + 1; q <= end; q++) {
+      if (up ? c[q].c < lo - 0.1 * atr : c[q].c > hi + 0.1 * atr) { broken = q; break; }
+      const ov = ovl(c[q], lo, hi); if (ov && !inz) touches++; inz = ov;
+    }
+    const tags = [e.kind];
+    if (fvg) tags.push("imbalance (FVG)");
+    if (e.tags.some(x => x.indexOf("sweep") > -1)) tags.push("liquidity sweep");
+    const so = sessionOpenTag(c[j].t); if (so) tags.push(so);
+    const nw = (typeof EVENTS !== "undefined" ? EVENTS : []).find(ev => { const ms = Date.parse(ev.iso); return ms <= c[e.i].t + 5 * 60000 && c[e.i].t - ms <= 30 * 60000; });
+    if (nw) tags.push("news impulse");
+    if (j >= 30) {
+      let hh = -Infinity, ll = Infinity; for (let q = j - 30; q < j; q++) { hh = Math.max(hh, c[q].h); ll = Math.min(ll, c[q].l); }
+      if (hh - ll <= 6 * atr && (up ? lo <= ll + 0.5 * atr : hi >= hh - 0.5 * atr)) tags.push(up ? "range low" : "range high");
+    }
+    const base = { tf: id, bias: up ? "bull" : "bear", lo, hi, i: j, t: c[j].t, evI: e.i, evT: e.t, ev: e.kind, fvg, tags, age: end - j, size: (hi - lo) / atr };
+    const aged = end - e.i;
+    out.push({ ...base, kind: "ob", touches, broken, valid: !broken && touches <= 1 && aged <= 220,
+      status: broken ? "broken (price closed through it)" : touches === 0 ? "fresh, not tested" : touches === 1 ? "tested once" : "weak, tested " + touches + " times" });
+    if (broken) {
+      let back = false, t2 = 0, inz2 = false;
+      for (let q = broken + 1; q <= end; q++) {
+        if (up ? c[q].c > hi + 0.1 * atr : c[q].c < lo - 0.1 * atr) { back = true; break; }
+        const ov = ovl(c[q], lo, hi); if (ov && !inz2) t2++; inz2 = ov;
+      }
+      out.push({ ...base, kind: "breaker", bias: up ? "bear" : "bull", i: broken, t: c[broken].t, from: j, touches: t2, broken: back ? broken : null, tags: ["breaker block"].concat(tags.slice(1)),
+        valid: !back && t2 <= 1 && end - broken <= 120, age: end - broken, status: back ? "invalid (price closed back through it)" : t2 === 0 ? "fresh breaker, not tested" : t2 === 1 ? "tested once" : "weak, tested " + t2 + " times" });
+    }
+  });
+  out.sort((x, y) => y.i - x.i);
+  return (a._ob = out);
+}
+/* Candle confirmation inside an order block, read on the lower timeframe (4H -> 15m, 1H -> 5m). */
+function obCheck(A, ob) {
+  const a = A[ob.tf], C = A[CONF_TF[ob.tf]], c = C.candles, n = c.length, e = n - 2, price = c[n - 1].c;
+  const atrT = atrAt(a, a.candles.length - 2), pad = 0.4 * atrT, bull = ob.bias === "bull";
+  const inZone = price >= ob.lo - pad && price <= ob.hi + pad;
+  const k0 = c[e], k1 = c[e - 1], mid = (ob.lo + ob.hi) / 2;
+  const visited = ovl(k0, ob.lo - pad, ob.hi + pad) || ovl(k1, ob.lo - pad, ob.hi + pad);
+  const invalid = bull ? k0.c < ob.lo - 0.1 * atrT : k0.c > ob.hi + 0.1 * atrT;
+  const how = [];
+  if (visited && !invalid) {
+    const P = candleParts(k0);
+    detectPatterns(C, e).filter(p => p.bias === ob.bias && p.str >= 2).forEach(p => how.push(p.name));
+    if (P.range && (bull ? (P.low >= 0.5 * P.range && k0.c >= k0.l + 0.6 * P.range) : (P.up >= 0.5 * P.range && k0.c <= k0.h - 0.6 * P.range))) how.push("rejection wick");
+    if (P.range && (bull ? (k0.c > k0.o && P.body >= 0.6 * P.range && k0.c > k1.h) : (k0.c < k0.o && P.body >= 0.6 * P.range && k0.c < k1.l))) how.push("strong " + (bull ? "green" : "red") + " candle closing beyond the last one");
+    if (bull ? (k1.l < mid && k0.c > mid && k0.c > k0.o) : (k1.h > mid && k0.c < mid && k0.c < k0.o)) how.push("closed back " + (bull ? "above" : "below") + " the middle of the block");
+  }
+  const confirmed = how.length > 0 && !invalid;
+  return { inZone, visited, confirmed, invalid, how: how.filter((x, i, ar) => ar.indexOf(x) === i), confTf: CONF_TF[ob.tf] };
+}
+/* All order blocks of the four shown timeframes, with alignment, multi-timeframe tags, quality score and live status. */
+function allOrderBlocks(A) {
+  if (A._obAll) return A._obAll;
+  const order = ["4h", "1h", "15m", "5m"];
+  let list = []; order.forEach(id => { if (A[id]) list = list.concat(orderBlocksOf(A[id])); });
+  list.forEach(ob => {
+    const want = ob.bias === "bull" ? "up" : "down", d4 = A["4h"].struct.dir, d1 = A["1h"].struct.dir, opp = want === "up" ? "down" : "up";
+    ob.aligned = (d4 === want || d1 === want) && d4 !== opp && d1 !== opp;
+    const hi = order.slice(0, order.indexOf(ob.tf));
+    ob.mtf = hi.some(id => list.some(o => o.tf === id && o.kind === "ob" && o.valid && o.bias === ob.bias && o.lo <= ob.hi && o.hi >= ob.lo));
+    if (ob.mtf) ob.tags = ob.tags.concat("inside a higher-timeframe order block");
+    const extra = ob.tags.some(t => /open$|news|range|higher-timeframe/.test(t));
+    ob.score = 2 + (ob.fvg ? 1 : 0) + (ob.tags.indexOf("liquidity sweep") > -1 ? 1 : 0) + (ob.touches === 0 ? 1 : 0) + (ob.aligned ? 1 : 0) + (extra ? 1 : 0);
+    ob.quality = ob.score >= 6 ? "strong" : ob.score >= 4 ? "good" : "weak";
+    ob.now = obCheck(A, ob);
+    const nw = ob.now;
+    ob.live = !ob.valid ? ob.status : nw.invalid ? "invalid now (closed through)" : nw.confirmed ? "VALID and confirmed on " + tfl(nw.confTf) : nw.inZone ? "valid, price inside, waiting for " + tfl(nw.confTf) + " candle" : "valid, price not at it yet";
+  });
+  list.sort((x, y) => order.indexOf(x.tf) - order.indexOf(y.tf) || y.i - x.i);
+  return (A._obAll = list);
+}
+
+/* ---------- Liquidity ---------- */
+/* Buy-side liquidity = stops resting above highs. Sell-side = stops below lows. A sweep = a wick beyond the level that closes back inside. */
+function liquidityOf(a) {
+  if (a._liq) return a._liq;
+  const c = a.candles, n = c.length, end = n - 2, atr = atrAt(a, end), tol = 0.15 * atr, lo0 = end - 150, price = c[n - 1].c;
+  const sw = a.swings.filter(s => s.i >= lo0 && s.i <= end - a.tf.k);
+  const pools = [];
+  [["H", "buy"], ["L", "sell"]].forEach(([type, side]) => {
+    const list = sw.filter(s => s.type === type), usedS = new Set();
+    for (let x = 0; x < list.length; x++) for (let y = x + 1; y < list.length; y++) {
+      if (Math.abs(list[x].p - list[y].p) <= tol && list[y].i - list[x].i >= 4) {
+        const p = side === "buy" ? Math.max(list[x].p, list[y].p) : Math.min(list[x].p, list[y].p);
+        const ex = pools.find(q => q.side === side && Math.abs(q.p - p) <= tol);
+        if (ex) { ex.i2 = Math.max(ex.i2, list[y].i); } else pools.push({ side, kind: "equal", p, i: list[x].i, i2: list[y].i });
+        usedS.add(list[x]); usedS.add(list[y]);
+      }
+    }
+    list.forEach(s => { if (!usedS.has(s)) pools.push({ side, kind: "swing", p: s.p, i: s.i, i2: s.i }); });
+  });
+  pools.forEach(q => {
+    q.status = "resting"; q.sweepI = null;
+    for (let j = q.i2 + 1; j <= end; j++) {
+      const over = q.side === "buy" ? c[j].h > q.p + 0.05 * atr : c[j].l < q.p - 0.05 * atr;
+      if (!over) continue;
+      /* a sweep: within 3 candles a close comes back inside, and no close went far beyond the level */
+      let back = null, far = false;
+      for (let x = j; x <= Math.min(end, j + 3); x++) {
+        if (q.side === "buy" ? c[x].c > q.p + 0.8 * atr : c[x].c < q.p - 0.8 * atr) far = true;
+        if (q.side === "buy" ? c[x].c < q.p : c[x].c > q.p) { back = x; break; }
+      }
+      q.status = back != null && !far ? "swept" : "taken"; q.sweepI = j;
+      break;
+    }
+    q.age = q.sweepI == null ? null : end - q.sweepI; q.dist = (q.p - price) / price * 100;
+  });
+  const live = pools.filter(q => q.status === "resting" && Math.abs(q.dist) <= 5).sort((x, y) => Math.abs(x.dist) - Math.abs(y.dist)).slice(0, 6);
+  const sweeps = pools.filter(q => q.status === "swept" && q.age <= 30).sort((x, y) => x.age - y.age);
+  /* trendline liquidity: line through the last two swing lows (rising) or highs (falling) */
+  const trend = [];
+  const lows = a.swings.filter(s => s.type === "L" && s.i >= end - 120), highs = a.swings.filter(s => s.type === "H" && s.i >= end - 120);
+  if (lows.length >= 2) { const p1 = lows[lows.length - 2], p2 = lows[lows.length - 1]; if (p2.p > p1.p && p2.i - p1.i >= 5) trend.push({ side: "sell", p1, p2, now: p2.p + (p2.p - p1.p) / (p2.i - p1.i) * (end - p2.i) }); }
+  if (highs.length >= 2) { const p1 = highs[highs.length - 2], p2 = highs[highs.length - 1]; if (p2.p < p1.p && p2.i - p1.i >= 5) trend.push({ side: "buy", p1, p2, now: p2.p + (p2.p - p1.p) / (p2.i - p1.i) * (end - p2.i) }); }
+  /* model: sweep, then CHoCH the other way, then wait for a pullback into an order block or imbalance */
+  let model = null;
+  const sw0 = sweeps[0];
+  if (sw0) {
+    const dir = sw0.side === "sell" ? "up" : "down";
+    const ch = structureEvents(a).find(e => e.kind === "CHoCH" && e.dir === dir && e.i > sw0.sweepI && e.i - sw0.sweepI <= 20);
+    const ob = ch ? orderBlocksOf(a).find(o => o.kind === "ob" && o.valid && o.bias === (dir === "up" ? "bull" : "bear") && o.evI === ch.i) : null;
+    model = { dir, sweep: sw0, choch: ch || null, ob: ob || null,
+      stage: ch ? "Sweep and CHoCH done. Wait for a pullback into the " + (ob ? "order block " + fp(ob.lo) + " to " + fp(ob.hi) : "order block or imbalance") + ", then enter " + (dir === "up" ? "long" : "short") + "."
+        : (sw0.side === "sell" ? "Sell-side liquidity at " : "Buy-side liquidity at ") + fp(sw0.p) + " was swept. Wait for a CHoCH " + (dir === "up" ? "up" : "down") + " before entering." };
+  }
+  return (a._liq = { pools, live, sweeps, trend, model });
+}
+
+/* ---------- 4H and 1H key levels, confirmed on the 15m and 5m charts ---------- */
+function keyLevels(A) {
+  if (A._kl) return A._kl;
+  const out = [];
+  ["4h", "1h"].forEach(id => {
+    const a = A[id], n = a.candles.length, price = a.candles[n - 1].c, atr = atrAt(a, n - 2);
+    const zs = zonesOf(a).zones.filter(z => (z.n >= 2 || z.last >= n - 60) && Math.abs(z.p - price) / price <= 0.08);
+    const above = zs.filter(z => z.p > price).sort((x, y) => x.p - y.p).slice(0, 3), below = zs.filter(z => z.p <= price).sort((x, y) => y.p - x.p).slice(0, 3);
+    above.concat(below).forEach(z => out.push({ tf: id, p: z.p, n: z.n, side: z.p > price ? "R" : "S", atr }));
+  });
+  return (A._kl = out);
+}
+/* For each key level: is the lower-timeframe candle showing a reversal (rejection), a break, or a false break? */
+function levelConfirm(A) {
+  if (A._lc) return A._lc;
+  const res = [];
+  keyLevels(A).forEach(L => {
+    const ct = CONF_TF[L.tf], C = A[ct], c = C.candles, n = c.length, e = n - 2, atrC = atrAt(C, e), tol = Math.max(0.5 * atrC, 0.12 * L.atr);
+    const name = tfl(L.tf) + (L.side === "R" ? " resistance " : " support ") + fp(L.p), price = c[n - 1].c;
+    const base = { tf: L.tf, confTf: ct, p: L.p, n: L.n, side: L.side, dist: (L.p - price) / price * 100, read: "none", dir: null, strength: null, pats: [], text: "", age: null };
+    const touchIdx = []; for (let q = e - 2; q <= e; q++) if (c[q].l <= L.p + tol && c[q].h >= L.p - tol) touchIdx.push(q);
+    const crossed = [e - 2, e - 1, e].some(q => c[q].c > L.p + 0.15 * atrC) && [e - 2, e - 1, e].some(q => c[q].c < L.p - 0.15 * atrC);
+    if (!touchIdx.length && !crossed) { base.text = name + ": price is " + Math.abs(base.dist).toFixed(2) + "% away. Waiting for it to reach the level."; res.push(base); return; }
+    const fromBelow = c[e - 3].c < L.p, volOf = q => C.volSma[q] ? c[q].v / C.volSma[q] : null;
+    const bodyPct = q => { const P = candleParts(c[q]); return P.range ? P.body / P.range : 0; };
+    const patsAt = (q, bias) => detectPatterns(C, q).filter(p => p.bias === bias && p.str >= 2).map(p => p.name);
+    const bias = fromBelow ? "bear" : "bull";
+    const closesBeyond = [], closesBack = [];
+    for (let q = e - 2; q <= e; q++) {
+      if (fromBelow ? c[q].c > L.p + 0.15 * atrC : c[q].c < L.p - 0.15 * atrC) closesBeyond.push(q);
+    }
+    if (closesBeyond.length) {
+      const first = closesBeyond[0], last = closesBeyond[closesBeyond.length - 1];
+      const backNow = fromBelow ? c[e].c < L.p : c[e].c > L.p;
+      if (backNow) {
+        res.push({ ...base, read: "trap", dir: fromBelow ? "down" : "up", strength: bodyPct(e) >= 0.4 ? "confirmed" : "early", pats: patsAt(e, bias), age: e - first,
+          text: name + ": false break. Price closed " + (fromBelow ? "above" : "below") + " it on the " + tfl(ct) + " chart and then back " + (fromBelow ? "below" : "above") + ". Reversal " + (fromBelow ? "down" : "up") + " is likely." });
+      } else {
+        const held = last === e && e - first >= 1 && (fromBelow ? c[e].l >= L.p - tol : c[e].h <= L.p + tol);
+        const v = volOf(first), strong = (v != null && v >= 1.2) || bodyPct(first) >= 0.6;
+        res.push({ ...base, read: "break", dir: fromBelow ? "up" : "down", strength: held ? "confirmed" : "early", pats: [], age: e - first,
+          text: name + ": TREND BREAK " + (fromBelow ? "up" : "down") + ". " + closesBeyond.length + " closed " + tfl(ct) + " candle" + (closesBeyond.length > 1 ? "s" : "") + " beyond it" + (strong ? " (strong candle / volume)" : "") + (held ? ", and it is holding. " : ". Wait for the next candle to hold. ") + "Best entry is the retest of " + fp(L.p) + "." });
+      }
+      return;
+    }
+    /* touched but did not close beyond: look for a rejection candle */
+    let best = null;
+    touchIdx.forEach(q => {
+      const P = candleParts(c[q]); if (!P.range) return;
+      const wick = fromBelow ? P.up / P.range : P.low / P.range;
+      const closeSide = fromBelow ? c[q].c < L.p && c[q].c < c[q].o : c[q].c > L.p && c[q].c > c[q].o;
+      const pats = patsAt(q, bias);
+      if ((wick >= 0.4 && closeSide) || pats.length) { if (!best || q > best.q) best = { q, wick, pats, closeSide }; }
+    });
+    if (best) {
+      const fresh = best.q >= e - 1;
+      res.push({ ...base, read: "reversal", dir: fromBelow ? "down" : "up", strength: fresh && (best.pats.length || best.wick >= 0.5) ? "confirmed" : "early", pats: best.pats, age: e - best.q,
+        text: name + ": REVERSAL " + (fromBelow ? "down" : "up") + ". " + tfl(ct) + " candle rejected the level" + (best.wick >= 0.4 ? " with a " + Math.round(best.wick * 100) + "% " + (fromBelow ? "upper" : "lower") + " wick" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + "." });
+    } else {
+      res.push({ ...base, read: "testing", dir: null, strength: null, text: name + ": price is testing the level. No rejection and no close beyond it yet on the " + tfl(ct) + " chart. Wait." });
+    }
+  });
+  const rank = r => (r.read === "none" ? 3 : r.read === "testing" ? 2 : r.strength === "confirmed" ? 0 : 1);
+  res.sort((x, y) => rank(x) - rank(y) || (x.tf === "4h" ? 0 : 1) - (y.tf === "4h" ? 0 : 1) || Math.abs(x.dist) - Math.abs(y.dist));
+  return (A._lc = res);
+}
+
+</script>
+<script>
+"use strict";
+/* Chart patterns found from the swing points: double top/bottom, head and shoulders (and inverse), three drive,
+   rising/falling wedge, bull/bear flag, bull/bear pennant, diamond top/bottom, rounding top/bottom.
+   status: "confirmed" = a candle closed beyond the neckline or trendline, "forming" = still building. */
+function regress(xs, ys) {
+  const n = xs.length; let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] * xs[i]; sxy += xs[i] * ys[i]; }
+  const d = n * sxx - sx * sx;
+  if (!d) return { m: 0, b: sy / n };
+  const m = (n * sxy - sx * sy) / d;
+  return { m, b: (sy - m * sx) / n };
+}
+const PAT_NOTE = {
+  "Double top": "Two highs at the same level. A close below the neckline (the low between them) confirms a drop.",
+  "Double bottom": "Two lows at the same level. A close above the neckline (the high between them) confirms a rise.",
+  "Head and shoulders": "Left shoulder, a higher head, right shoulder. A close below the neckline confirms a drop.",
+  "Inverse head and shoulders": "Left shoulder, a lower head, right shoulder. A close above the neckline confirms a rise.",
+  "Three drive (bearish)": "Three rising pushes up. A close below the neckline (the pullback lows) confirms a drop.",
+  "Three drive (bullish)": "Three falling pushes down. A close above the neckline (the bounce highs) confirms a rise.",
+  "Rising wedge": "Both lines rise and squeeze together. A close below the lower line confirms a drop.",
+  "Falling wedge": "Both lines fall and squeeze together. A close above the upper line confirms a rise.",
+  "Bull flag": "Sharp rise, then a small pullback in a parallel channel. A close above the channel continues the rise.",
+  "Bear flag": "Sharp drop, then a small bounce in a parallel channel. A close below the channel continues the drop.",
+  "Bull pennant": "Sharp rise, then a small tightening triangle. A close above it continues the rise.",
+  "Bear pennant": "Sharp drop, then a small tightening triangle. A close below it continues the drop.",
+  "Diamond top": "Price swings widen and then narrow after an uptrend. A close below the last low confirms a drop.",
+  "Diamond bottom": "Price swings widen and then narrow after a downtrend. A close above the last high confirms a rise.",
+  "Rounding top": "A slow curve up and back down. Reversal down once price falls back to where the curve started.",
+  "Rounding bottom": "A slow curve down and back up. Reversal up once price rises back to where the curve started."
+};
+function chartPatternsOf(a) {
+  if (a._cp) return a._cp;
+  const c = a.candles, n = c.length, end = n - 2, S = a.swings.filter(s => s.i <= end), m = S.length, atr = atrAt(a, end), out = [];
+  const firstClose = (from, test) => { for (let k = from; k <= end; k++) if (test(k, c[k].c)) return k; return null; };
+  const add = p => { if (!out.some(o => o.name === p.name)) out.push(p); };
+  const mk = (name, bias, status, o) => ({ name, bias, status, note: PAT_NOTE[name], tf: a.tf.id, ...o });
+
+  /* double top / bottom */
+  for (let q = Math.max(0, m - 6); q + 2 < m; q++) {
+    const A0 = S[q], B0 = S[q + 1], C0 = S[q + 2];
+    if (C0.i - A0.i < 6 || end - C0.i > 40) continue;
+    if (A0.type === "H" && C0.type === "H" && Math.abs(A0.p - C0.p) <= 0.6 * atr && Math.min(A0.p, C0.p) - B0.p >= 1.2 * atr) {
+      const peak = Math.max(A0.p, C0.p), neck = B0.p, h = (A0.p + C0.p) / 2 - neck;
+      if (firstClose(C0.i + 1, (k, cl) => cl > peak + 0.3 * atr) != null) continue;
+      const cf = firstClose(C0.i + 1, (k, cl) => cl < neck - 0.1 * atr);
+      if (cf == null && c[n - 1].c < neck) continue;
+      add(mk("Double top", "bear", cf != null ? "confirmed" : "forming", { neck, stop: peak + 0.2 * atr, target: neck - h, i0: A0.i, i1: cf != null ? cf : end, age: end - (cf != null ? cf : C0.i),
+        pts: [A0, B0, C0], lines: [[{ i: A0.i, p: neck }, { i: cf != null ? cf : end, p: neck }]], key: C0.i }));
+    }
+    if (A0.type === "L" && C0.type === "L" && Math.abs(A0.p - C0.p) <= 0.6 * atr && B0.p - Math.max(A0.p, C0.p) >= 1.2 * atr) {
+      const trough = Math.min(A0.p, C0.p), neck = B0.p, h = neck - (A0.p + C0.p) / 2;
+      if (firstClose(C0.i + 1, (k, cl) => cl < trough - 0.3 * atr) != null) continue;
+      const cf = firstClose(C0.i + 1, (k, cl) => cl > neck + 0.1 * atr);
+      if (cf == null && c[n - 1].c > neck) continue;
+      add(mk("Double bottom", "bull", cf != null ? "confirmed" : "forming", { neck, stop: trough - 0.2 * atr, target: neck + h, i0: A0.i, i1: cf != null ? cf : end, age: end - (cf != null ? cf : C0.i),
+        pts: [A0, B0, C0], lines: [[{ i: A0.i, p: neck }, { i: cf != null ? cf : end, p: neck }]], key: C0.i }));
+    }
+  }
+
+  /* head and shoulders / inverse, three drive */
+  for (let q = Math.max(0, m - 7); q + 4 < m; q++) {
+    const P = S.slice(q, q + 5), [p0, p1, p2, p3, p4] = P;
+    if (end - p4.i > 40) continue;
+    const nk = (k, i1, v1, i2, v2) => v1 + (v2 - v1) * (k - i1) / ((i2 - i1) || 1);
+    if (p0.type === "H") {
+      const neckAvg = (p1.p + p3.p) / 2, head = p2.p - neckAvg;
+      if (p2.p > p0.p + 0.3 * atr && p2.p > p4.p + 0.3 * atr && head >= 1.5 * atr && Math.abs(p0.p - p4.p) <= 0.5 * head) {
+        const cf = firstClose(p4.i + 1, (k, cl) => cl < nk(k, p1.i, p1.p, p3.i, p3.p) - 0.1 * atr);
+        if (!(cf == null && c[n - 1].c < nk(n - 1, p1.i, p1.p, p3.i, p3.p)) && firstClose(p4.i + 1, (k, cl) => cl > p2.p) == null) {
+          const nv = k => nk(k, p1.i, p1.p, p3.i, p3.p);
+          add(mk("Head and shoulders", "bear", cf != null ? "confirmed" : "forming", { neck: nv(cf != null ? cf : end), stop: p4.p + 0.2 * atr, target: nv(cf != null ? cf : end) - head, i0: p0.i, i1: cf != null ? cf : end, age: end - (cf != null ? cf : p4.i),
+            pts: P, lines: [[{ i: p1.i, p: p1.p }, { i: cf != null ? cf : end, p: nv(cf != null ? cf : end) }]], key: p4.i }));
+        }
+      }
+      /* three drive up: three rising highs, pullback lows on a line */
+      if (p4.p > p2.p + 0.6 * atr && p2.p > p0.p + 0.6 * atr && p4.p - p0.p >= 2.5 * atr && p3.p >= p1.p - 0.5 * atr && p1.p < p0.p - 1 * atr && p3.p < p2.p - 0.5 * atr) {
+        const nv = k => nk(k, p1.i, p1.p, p3.i, p3.p), cf = firstClose(p4.i + 1, (k, cl) => cl < nv(k) - 0.1 * atr);
+        if (!(cf == null && c[n - 1].c < nv(n - 1))) add(mk("Three drive (bearish)", "bear", cf != null ? "confirmed" : "forming", { neck: nv(cf != null ? cf : end), stop: p4.p + 0.2 * atr, target: nv(cf != null ? cf : end) - (p4.p - nv(p4.i)), i0: p0.i, i1: cf != null ? cf : end, age: end - (cf != null ? cf : p4.i),
+          pts: P, lines: [[{ i: p1.i, p: p1.p }, { i: cf != null ? cf : end, p: nv(cf != null ? cf : end) }]], key: p4.i }));
+      }
+    } else {
+      const neckAvg = (p1.p + p3.p) / 2, head = neckAvg - p2.p;
+      if (p2.p < p0.p - 0.3 * atr && p2.p < p4.p - 0.3 * atr && head >= 1.5 * atr && Math.abs(p0.p - p4.p) <= 0.5 * head) {
+        const nv = k => nk(k, p1.i, p1.p, p3.i, p3.p), cf = firstClose(p4.i + 1, (k, cl) => cl > nv(k) + 0.1 * atr);
+        if (!(cf == null && c[n - 1].c > nv(n - 1)) && firstClose(p4.i + 1, (k, cl) => cl < p2.p) == null) {
+          add(mk("Inverse head and shoulders", "bull", cf != null ? "confirmed" : "forming", { neck: nv(cf != null ? cf : end), stop: p4.p - 0.2 * atr, target: nv(cf != null ? cf : end) + head, i0: p0.i, i1: cf != null ? cf : end, age: end - (cf != null ? cf : p4.i),
+            pts: P, lines: [[{ i: p1.i, p: p1.p }, { i: cf != null ? cf : end, p: nv(cf != null ? cf : end) }]], key: p4.i }));
+        }
+      }
+      if (p2.p < p0.p - 0.3 * atr && p4.p < p2.p - 0.6 * atr && p2.p < p0.p - 0.6 * atr && p0.p - p4.p >= 2.5 * atr && p3.p <= p1.p + 0.5 * atr && p1.p > p0.p + 1 * atr && p3.p > p2.p + 0.5 * atr) {
+        const nv = k => nk(k, p1.i, p1.p, p3.i, p3.p), cf = firstClose(p4.i + 1, (k, cl) => cl > nv(k) + 0.1 * atr);
+        if (!(cf == null && c[n - 1].c > nv(n - 1))) add(mk("Three drive (bullish)", "bull", cf != null ? "confirmed" : "forming", { neck: nv(cf != null ? cf : end), stop: p4.p - 0.2 * atr, target: nv(cf != null ? cf : end) + (nv(p4.i) - p4.p), i0: p0.i, i1: cf != null ? cf : end, age: end - (cf != null ? cf : p4.i),
+          pts: P, lines: [[{ i: p1.i, p: p1.p }, { i: cf != null ? cf : end, p: nv(cf != null ? cf : end) }]], key: p4.i }));
+      }
+    }
+  }
+
+  /* wedges: lines through the last three highs and three lows */
+  {
+    const hs = S.filter(s => s.type === "H" && s.i >= end - 90).slice(-3), ls = S.filter(s => s.type === "L" && s.i >= end - 90).slice(-3);
+    if (hs.length === 3 && ls.length === 3) {
+      const x0 = Math.min(hs[0].i, ls[0].i), x1 = Math.max(hs[2].i, ls[2].i), dur = x1 - x0;
+      const fH = regress(hs.map(s => s.i), hs.map(s => s.p)), fL = regress(ls.map(s => s.i), ls.map(s => s.p));
+      const res = (f, pts) => Math.max(...pts.map(s => Math.abs(f.m * s.i + f.b - s.p)));
+      const up = k => fH.m * k + fH.b, lo = k => fL.m * k + fL.b;
+      const w0 = up(x0) - lo(x0), w1 = up(x1) - lo(x1);
+      if (dur >= 12 && end - x1 <= 30 && res(fH, hs) <= 0.8 * atr && res(fL, ls) <= 0.8 * atr && w1 > 0 && w1 < 0.7 * w0 && Math.abs(fH.m) * dur >= 0.4 * atr && Math.abs(fL.m) * dur >= 0.4 * atr) {
+        const pts = hs.concat(ls).sort((p, q) => p.i - q.i);
+        if (fH.m > 0 && fL.m > 0) {
+          const cf = firstClose(x1 + 1, (k, cl) => cl < lo(k) - 0.1 * atr);
+          if (cf != null || c[n - 1].c > lo(n - 1)) add(mk("Rising wedge", "bear", cf != null ? "confirmed" : "forming", { neck: lo(cf != null ? cf : end), stop: up(end) + 0.2 * atr, target: lo(cf != null ? cf : end) - w0, i0: x0, i1: cf != null ? cf : end, age: end - (cf != null ? cf : x1), pts,
+            lines: [[{ i: x0, p: up(x0) }, { i: end, p: up(end) }], [{ i: x0, p: lo(x0) }, { i: end, p: lo(end) }]], key: x1 }));
+        } else if (fH.m < 0 && fL.m < 0) {
+          const cf = firstClose(x1 + 1, (k, cl) => cl > up(k) + 0.1 * atr);
+          if (cf != null || c[n - 1].c < up(n - 1)) add(mk("Falling wedge", "bull", cf != null ? "confirmed" : "forming", { neck: up(cf != null ? cf : end), stop: lo(end) - 0.2 * atr, target: up(cf != null ? cf : end) + w0, i0: x0, i1: cf != null ? cf : end, age: end - (cf != null ? cf : x1), pts,
+            lines: [[{ i: x0, p: up(x0) }, { i: end, p: up(end) }], [{ i: x0, p: lo(x0) }, { i: end, p: lo(end) }]], key: x1 }));
+        }
+      }
+    }
+  }
+
+  /* flags and pennants: a sharp pole, then a small counter-move bounded by two lines through the swings after the pole */
+  for (let q = m - 1; q >= 1; q--) {
+    const B = S[q], A0 = S[q - 1], P = Math.abs(B.p - A0.p), len = end - B.i;
+    if (len > 40) break;
+    if (P < 3 * atr || B.i - A0.i > 20 || len < 5) continue;
+    const upPole = B.type === "H", after = S.slice(q + 1);
+    const hsC = (upPole ? [B] : []).concat(after.filter(s => s.type === "H" && s.p < (upPole ? B.p + 0.1 * atr : A0.p + 0.6 * P)));
+    const lsC = (!upPole ? [B] : []).concat(after.filter(s => s.type === "L" && s.p > (upPole ? A0.p + 0.4 * P : B.p - 0.1 * atr)));
+    if (hsC.length < 2 || lsC.length < 2) continue;
+    const fH = regress(hsC.map(s => s.i), hsC.map(s => s.p)), fL = regress(lsC.map(s => s.i), lsC.map(s => s.p)), up = k => fH.m * k + fH.b, lo = k => fL.m * k + fL.b;
+    const x0 = B.i, x1 = Math.max(hsC[hsC.length - 1].i, lsC[lsC.length - 1].i), w0 = up(x0) - lo(x0), w1 = up(x1) - lo(x1);
+    const retr = upPole ? (B.p - Math.min(...lsC.map(s => s.p))) / P : (Math.max(...hsC.map(s => s.p)) - B.p) / P;
+    if (retr < 0.08 || retr > 0.55 || w1 <= 0 || x1 - x0 < 4) continue;
+    const converge = w1 <= 0.55 * w0, parallel = w1 > 0.55 * w0, sm = 0.03 * atr;
+    let name = null;
+    if (upPole) name = converge && fH.m <= sm && fL.m >= -sm ? "Bull pennant" : parallel && fH.m < 0 && fL.m <= sm ? "Bull flag" : null;
+    else name = converge && fH.m >= -sm && fL.m <= sm ? "Bear pennant" : parallel && fH.m >= -sm && fL.m > 0 ? "Bear flag" : null;
+    if (!name) continue;
+    const cf = firstClose(x1 + 1, (k, cl) => upPole ? cl > up(k) + 0.1 * atr : cl < lo(k) - 0.1 * atr);
+    if (cf != null && end - cf > 15) continue;
+    const bo = upPole ? up(cf != null ? cf : end) : lo(cf != null ? cf : end);
+    if (cf == null && (c[n - 1].c > up(n - 1) + 0.5 * atr || c[n - 1].c < lo(n - 1) - 0.5 * atr)) continue;
+    add(mk(name, upPole ? "bull" : "bear", cf != null ? "confirmed" : "forming", { neck: bo, stop: upPole ? lo(end) - 0.2 * atr : up(end) + 0.2 * atr, target: bo + (upPole ? P : -P), i0: A0.i, i1: cf != null ? cf : end,
+      age: end - (cf != null ? cf : x1), pts: [A0, B], lines: [[{ i: x0, p: up(x0) }, { i: end, p: up(end) }], [{ i: x0, p: lo(x0) }, { i: end, p: lo(end) }]], key: B.i }));
+    break;
+  }
+
+  /* diamond: swing size grows, then shrinks, after a trend */
+  {
+    const win = S.filter(s => s.i >= end - 80).slice(-9);
+    if (win.length >= 7) {
+      const amps = []; for (let k = 1; k < win.length; k++) amps.push(Math.abs(win[k].p - win[k - 1].p));
+      const mx = Math.max(...amps), pk = amps.indexOf(mx);
+      const inc = amps.slice(0, pk + 1).filter((v, k, ar) => k === 0 || v >= ar[k - 1] * 0.9).length, dec = amps.slice(pk).filter((v, k, ar) => k === 0 || v <= ar[k - 1] * 1.1).length;
+      if (pk >= 2 && pk <= amps.length - 3 && mx >= 1.4 * amps[0] && mx >= 1.4 * amps[amps.length - 1] && inc >= (pk + 1) * 0.7 && dec >= (amps.length - pk) * 0.7 && end - win[win.length - 1].i <= 25) {
+        const i0 = win[0].i, before = a.closes[Math.max(0, i0 - 25)], drift = a.closes[i0] - before, last = win[win.length - 1];
+        const lastL = [...win].reverse().find(s => s.type === "L"), lastH = [...win].reverse().find(s => s.type === "H");
+        if (drift >= 2 * atr) {
+          const cf = firstClose(last.i + 1, (k, cl) => cl < lastL.p - 0.1 * atr);
+          add(mk("Diamond top", "bear", cf != null ? "confirmed" : "forming", { neck: lastL.p, stop: Math.max(...win.map(s => s.p)) + 0.2 * atr, target: lastL.p - mx, i0, i1: cf != null ? cf : end, age: end - (cf != null ? cf : last.i), pts: win, lines: [], key: last.i }));
+        } else if (drift <= -2 * atr) {
+          const cf = firstClose(last.i + 1, (k, cl) => cl > lastH.p + 0.1 * atr);
+          add(mk("Diamond bottom", "bull", cf != null ? "confirmed" : "forming", { neck: lastH.p, stop: Math.min(...win.map(s => s.p)) - 0.2 * atr, target: lastH.p + mx, i0, i1: cf != null ? cf : end, age: end - (cf != null ? cf : last.i), pts: win, lines: [], key: last.i }));
+        }
+      }
+    }
+  }
+
+  /* rounding top / bottom: a quadratic curve through the last 50 closes */
+  if (end >= 60) {
+    const W = 50, ys = a.closes.slice(end - W + 1, end + 1), xs = ys.map((_, k) => -1 + 2 * k / (W - 1));
+    let s0 = W, s1 = 0, s2 = 0, s3 = 0, s4 = 0, t0 = 0, t1 = 0, t2 = 0;
+    xs.forEach((x, k) => { const y = ys[k]; s1 += x; s2 += x * x; s3 += x ** 3; s4 += x ** 4; t0 += y; t1 += x * y; t2 += x * x * y; });
+    const det3 = (a1, a2, a3, b1, b2, b3, c1, c2, c3) => a1 * (b2 * c3 - b3 * c2) - a2 * (b1 * c3 - b3 * c1) + a3 * (b1 * c2 - b2 * c1);
+    const D = det3(s4, s3, s2, s3, s2, s1, s2, s1, s0);
+    if (Math.abs(D) > 1e-9) {
+      const qa = det3(t2, s3, s2, t1, s2, s1, t0, s1, s0) / D, qb = det3(s4, t2, s2, s3, t1, s1, s2, t0, s0) / D, qc = det3(s4, s3, t2, s3, s2, t1, s2, s1, t0) / D;
+      const f = x => qa * x * x + qb * x + qc, mean = t0 / W;
+      let ssr = 0, sst = 0; xs.forEach((x, k) => { ssr += (ys[k] - f(x)) ** 2; sst += (ys[k] - mean) ** 2; });
+      const r2 = sst ? 1 - ssr / sst : 0, vx = qa ? -qb / (2 * qa) : 0, vy = f(vx);
+      const rim = (ys[0] + ys[1] + ys[2]) / 3, depth = qa > 0 ? rim - vy : vy - rim;
+      const curve = xs.filter((_, k) => k % 3 === 0).map(x => ({ i: end - W + 1 + Math.round((x + 1) / 2 * (W - 1)), p: f(x) }));
+      if (r2 >= 0.75 && Math.abs(vx) <= 0.5 && depth >= 2.5 * atr) {
+        const now = c[end].c;
+        if (qa > 0) {
+          const rec = (now - vy) / (rim - vy);
+          if (rec >= 0.5) add(mk("Rounding bottom", "bull", rec >= 1 ? "confirmed" : "forming", { neck: rim, stop: vy - 0.2 * atr, target: rim + (rim - vy), i0: end - W + 1, i1: end, age: 0, pts: [], lines: [], curve, key: end }));
+        } else {
+          const rec = (vy - now) / (vy - rim);
+          if (rec >= 0.5) add(mk("Rounding top", "bear", rec >= 1 ? "confirmed" : "forming", { neck: rim, stop: vy + 0.2 * atr, target: rim - (vy - rim), i0: end - W + 1, i1: end, age: 0, pts: [], lines: [], curve, key: end }));
+        }
+      }
+    }
+  }
+  if (out.some(o => /flag|pennant/.test(o.name))) { for (let k = out.length - 1; k >= 0; k--) if (/Three drive/.test(out[k].name)) out.splice(k, 1); }
+  out.sort((x, y) => (x.status === "confirmed" ? 0 : 1) - (y.status === "confirmed" ? 0 : 1) || x.age - y.age);
+  return (a._cp = out);
+}
+
+</script>
+<script>
+"use strict";
 /* Market data: Binance candles, CoinGecko market caps (coins above MIN_CAP only). */
 const CG = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false&page=";
 
@@ -937,7 +1431,7 @@ function newsListHtml(kind) {
    Direction comes from the bigger trend (4H and 1H structure plus the hidden daily chart).
    Entry comes from where price pulls back to (retracement zone, retest of a broken level, support or resistance, EMA).
    The trigger is a candle on the 5 and 15 minute charts. Macro news can block the trade. */
-const SETUP_MIN = 8, WATCH_MIN = 6;
+const SETUP_MIN = 9, WATCH_MIN = 7;
 const sgn = d => d === "up" ? 1 : d === "down" ? -1 : 0;
 
 /* Candle confirmation on the 5m and 15m charts. */
@@ -967,9 +1461,21 @@ function triggerCheck(A, L) {
   return { ok, text, support, oppose, rej5, rej15, micro };
 }
 
+/* A valid order block (or breaker block) that price is inside right now, in the trade direction. */
+function obZone(A, L) {
+  const want = L ? "bull" : "bear", ord = ["4h", "1h", "15m", "5m"];
+  const c = allOrderBlocks(A).filter(o => o.bias === want && o.valid && o.score >= 4 && o.now.inZone && !o.now.invalid)
+    .sort((x, y) => (y.now.confirmed ? 1 : 0) - (x.now.confirmed ? 1 : 0) || y.score - x.score || ord.indexOf(x.tf) - ord.indexOf(y.tf));
+  const o = c[0]; if (!o) return null;
+  return { type: "ORDER BLOCK", tf: o.tf, level: (o.lo + o.hi) / 2, lo: o.lo, hi: o.hi, edge: L ? o.lo : o.hi, confirmed: o.now.confirmed, confTf: o.now.confTf, ob: o,
+    label: (o.kind === "breaker" ? "Breaker block " : "Order block ") + tfl(o.tf) + " " + fp(o.lo) + " to " + fp(o.hi) + " (" + o.quality + ": " + o.tags.join(", ") + "). " +
+      (o.now.confirmed ? "Candle confirmed on " + tfl(o.now.confTf) + " (" + o.now.how.join(", ") + ")." : "Price is inside it. Waiting for a " + tfl(o.now.confTf) + " confirmation candle.") };
+}
 /* Where to enter. Returns the best zone price is at right now, or null. */
 function entryZone(A, L, price, atr15, brk) {
   const dirW = L ? "up" : "down", M15 = A["15m"], end15 = M15.candles.length - 2, atr5 = A["5m"].atr[A["5m"].candles.length - 2] || atr15 / 2;
+  const obz = obZone(A, L);
+  if (obz && obz.confirmed) return obz;
   /* 1. Retest of a broken level */
   for (const [tf, list] of brk) for (const e of list) {
     if (e.type === "break" && e.dir === dirW && e.age <= 40 && (e.status === "retesting" || (e.status === "held" && Math.abs(price - e.p) <= 0.6 * atr15))) {
@@ -1010,7 +1516,7 @@ function entryZone(A, L, price, atr15, brk) {
         label: "Fresh break of " + (L ? "resistance" : "support") + " at " + fp(e.p) + " with " + e.vol.toFixed(1) + "x volume (" + tf + "). Momentum entry, or wait for a retest." };
     }
   }
-  return null;
+  return obz || null;
 }
 /* Used when no zone is active: tells the trader where to wait. */
 function pullbackPlan(A, L, price) {
@@ -1068,6 +1574,18 @@ function buildSignal(A) {
   const fr = x => x == null ? "n/a" : x.toFixed(0);
   const fv = x => x == null ? "n/a" : x.toFixed(2) + "x";
   const bk = sameBreaks.filter(e => e.type === "break")[0] || sameBreaks[0];
+  /* 4H levels are read on the 15m chart, 1H levels on the 5m chart: is price reversing or breaking? */
+  const lc = levelConfirm(A).filter(r => r.read !== "none" && r.read !== "testing");
+  const lcSup = lc.filter(r => r.dir === want), lcOpp = lc.filter(r => r.dir === opp && r.strength === "confirmed");
+  /* structure events, liquidity model, chart patterns */
+  const evSup = [["15m", M15], ["1h", H1]].flatMap(([tf, a]) => structureEvents(a).filter(e => e.dir === want && e.age <= 20).map(e => ({ ...e, tf })));
+  const evOpp = [["15m", M15], ["1h", H1]].flatMap(([tf, a]) => structureEvents(a).filter(e => e.dir === opp && e.kind === "CHoCH" && e.age <= 8).map(e => ({ ...e, tf })));
+  const liqM = liquidityOf(M15).model, liqSup = liqM && liqM.dir === want && liqM.choch ? liqM : null;
+  const cpAll = [["15m", M15], ["1h", H1], ["4h", H4]].flatMap(([tf, a]) => chartPatternsOf(a).map(p => ({ ...p, tf })));
+  const cpSup = cpAll.filter(p => p.bias === wantB && p.status === "confirmed" && p.age <= 25), cpOpp = cpAll.filter(p => p.bias === oppB && p.status === "confirmed" && p.age <= 15);
+  const smcOk = (evSup.length > 0 || !!liqSup || cpSup.length > 0) && evOpp.length === 0;
+  const smcTxt = [].concat(evSup.slice(0, 2).map(e => e.name + " " + e.tf + " (" + e.age + " candles ago)"), liqSup ? ["Liquidity sweep then CHoCH on 15m"] : [], cpSup.slice(0, 2).map(p => p.name + " " + p.tf))
+    .concat(evOpp.map(e => "AGAINST: " + e.name + " " + e.tf)).join("; ") || "No recent BOS, CHoCH, liquidity sweep or chart pattern in your direction";
 
   const checks = [
     { ok: htf * (L ? 1 : -1) >= 2, w: 2, label: "Bigger trend agrees", d: "4H " + dirWord(H4.struct.dir) + ", 1H " + dirWord(H1.struct.dir) + ", plus the daily chart in the background" },
@@ -1078,6 +1596,8 @@ function buildSignal(A) {
     { ok: rsiOk, w: 1, label: "RSI not stretched", d: "15m RSI " + fr(rsi15) + ", 5m RSI " + fr(rsi5) + (L ? " (want 15m 35-70, 5m under 75)" : " (want 15m 30-65, 5m over 25)") },
     { ok: volOk, w: 1, label: "Volume backs the move", d: "Last closed 5m candle " + fv(v5) + ", 15m candle " + fv(v15) + " of their 20-bar average (want 1.0x or more on one)" },
     { ok: nAgree >= 2 && nOpp === 0, w: 1, label: "Last 50 and 100 candles agree", d: ln.map(x => x[0] + ": " + x[1].label).join(", ") },
+    { ok: lcSup.length > 0 && lcOpp.length === 0, w: 1, label: "4H / 1H level confirmed (15m / 5m candle)", d: lcSup.length ? lcSup.slice(0, 2).map(r => r.text).join(" ") : lcOpp.length ? "AGAINST: " + lcOpp[0].text : "No 4H or 1H support/resistance is being tested on the 15m / 5m chart right now" },
+    { ok: smcOk, w: 1, label: "Structure and liquidity support (BOS, CHoCH, sweep, pattern)", d: smcTxt },
     { ok: macroOk, w: 1, label: "News and macro mood not against you", d: macro.bias.text }
   ];
   const max = checks.reduce((s, x) => s + x.w, 0), score = checks.reduce((s, x) => s + (x.ok ? x.w : 0), 0);
@@ -1097,25 +1617,37 @@ function buildSignal(A) {
   const patBest = patsNow.slice().sort((a, b) => b.str - a.str)[0] || null;
 
   const htfOk = checks[0].ok;
+  const zoneOk = !!zone && zone.confirmed !== false;
+  const oppList = [].concat(trg.oppose.map(p => p.name + " (" + p.tf + ")"), oppBreaks.map(e => "break of " + fp(e.p) + " " + e.tf), lcOpp.map(r => tfl(r.tf) + " level " + fp(r.p) + " " + r.read), evOpp.map(e => e.name + " " + e.tf), cpOpp.map(p => p.name + " " + p.tf));
   let verdict, cls, reason;
   if (!side) { verdict = "WAIT"; cls = "mute"; reason = "The bigger trend is not clear. 4H, 1H and the daily background do not agree."; }
   else if (macro.block) { verdict = "WAIT (NEWS)"; cls = "warn"; reason = macro.block.text; }
-  else if (htfOk && zone && trg.ok && score >= SETUP_MIN && !trg.oppose.length && !oppBreaks.length) {
+  else if (htfOk && zoneOk && trg.ok && score >= SETUP_MIN && !oppList.length) {
     verdict = (L ? "LONG" : "SHORT") + " SETUP"; cls = L ? "up" : "down";
-    reason = "Bigger trend agrees, price is at a zone and a candle confirmed it." + (macro.caution ? " " + macro.caution.text : "");
-  } else if (htfOk && zone && trg.ok && score >= SETUP_MIN) {
+    reason = "Bigger trend agrees, price is at a " + (zone.type === "ORDER BLOCK" ? "valid order block" : "zone") + " and a candle confirmed it." + (macro.caution ? " " + macro.caution.text : "");
+  } else if (htfOk && zoneOk && trg.ok && score >= SETUP_MIN) {
     verdict = "WATCH " + (L ? "LONG" : "SHORT"); cls = "warn";
-    reason = "The setup is ready, but " + (trg.oppose.length ? trg.oppose.map(p => p.name + " (" + p.tf + ")").join(", ") + " points the other way" : "a level just broke against the trade (" + oppBreaks.map(e => fp(e.p) + " " + e.tf).join(", ") + ")") + ". Wait for the next candle.";
+    reason = "The setup is ready, but something points the other way: " + oppList.join(", ") + ". Wait for the next candle.";
+  } else if (htfOk && zone && zone.confirmed === false) {
+    verdict = "WATCH " + (L ? "LONG" : "SHORT"); cls = "warn";
+    reason = "Price is inside a valid " + tfl(zone.tf) + " order block. Wait for a " + tfl(zone.confTf) + " confirmation candle before entering.";
   } else if (htfOk && score >= WATCH_MIN) {
     verdict = "WATCH " + (L ? "LONG" : "SHORT"); cls = "warn";
     reason = zone ? "Price is at a zone. Wait for a confirmation candle." : pullbackPlan(A, L, price);
   } else { verdict = "WAIT"; cls = "mute"; reason = "Not enough checks pass for a scalp."; }
+  /* which timeframe the signal belongs to */
+  const trigTfs = []; trg.support.forEach(p => { if (trigTfs.indexOf(p.tf) < 0) trigTfs.push(p.tf); });
+  if ((trg.rej5 || trg.micro) && trigTfs.indexOf("5m") < 0) trigTfs.push("5m"); if (trg.rej15 && trigTfs.indexOf("15m") < 0) trigTfs.push("15m");
+  const confOn = zone && zone.type === "ORDER BLOCK" && zone.confirmed ? [zone.confTf] : trigTfs;
+  const tfLabel = zone ? tfl(zone.tf) + " " + zone.type.toLowerCase() + ", candle confirmation on " + (confOn.length ? confOn.map(tfl).join(" + ") : "none yet") : "No entry zone yet";
+  const obsNear = allOrderBlocks(A).filter(o => o.valid && Math.abs((o.lo + o.hi) / 2 - price) / price <= 0.02).slice(0, 5);
   return {
     side, lean, L, verdict, cls, reason, checks, score, max, price, zone, plan: zone ? "" : pullbackPlan(A, L, price),
     sl: lv && lv.sl, tp1: lv && lv.tp1, tp2: lv && lv.tp2, tp3: lv && lv.tp3, risk: lv && lv.risk, capped: lv && lv.capped,
     atr15, atr5, macro, near, srNote, rsi15, t5: M5.candles[end5].t, patBest, trg,
     pat: { supportP: trg.support, opposeP: trg.oppose },
-    struct: { h4: H4.struct, h1: H1.struct, m15: M15.struct, m5: M5.struct }, sameBreaks, oppBreaks
+    struct: { h4: H4.struct, h1: H1.struct, m15: M15.struct, m5: M5.struct }, sameBreaks, oppBreaks,
+    tfLabel, trigTfs, sigTf: zone ? zone.tf : null, lc: levelConfirm(A).filter(r => r.read !== "none").slice(0, 4), lcSup, lcOpp, obsNear, evSup, evOpp, liqM, cpSup, cpOpp, oppList
   };
 }
 
@@ -1260,7 +1792,7 @@ function sessionAllowed() {
 }
 function alertBody(a) {
   const s = a.sig;
-  return (s.zone ? s.zone.type + ": " + s.zone.label + "\n" : "") + "Entry " + fp(s.price) + "\nStop loss " + fp(s.sl) + "\nTarget 1 " + fp(s.tp1) + "\nTarget 2 " + fp(s.tp2) + "\nTarget 3 " + fp(s.tp3) +
+  return (s.zone ? s.zone.type + ": " + s.zone.label + "\nTimeframe: " + s.tfLabel + "\n" : "") + "Entry " + fp(s.price) + "\nStop loss " + fp(s.sl) + "\nTarget 1 " + fp(s.tp1) + "\nTarget 2 " + fp(s.tp2) + "\nTarget 3 " + fp(s.tp3) +
     "\nScore " + s.score + "/" + s.max + (s.macro.caution ? "\nNews soon: use half size" : "") +
     (s.pat.supportP.length ? "\nCandle: " + s.pat.supportP.map(p => p.name + " (" + p.tf + ")").join(", ") : "") + (s.srNote ? "\n" + s.srNote : "");
 }
@@ -1386,20 +1918,51 @@ async function boot(cfg) {
   if (cfg.after) cfg.after();
 }
 
+/* ---------- Exchange links: open the pair on Binance, Bybit, OKX, Bitget or KuCoin, and copy the order details. No keys, no auto trading. ---------- */
+const EXCHANGES = [["binance", "Binance"], ["bybit", "Bybit"], ["okx", "OKX"], ["bitget", "Bitget"], ["kucoin", "KuCoin"]];
+function exchangeUrl(ex, pair, market) {
+  const base = coinOf(pair), fut = market === "futures";
+  switch (ex) {
+    case "bybit": return fut ? "https://www.bybit.com/trade/usdt/" + base + "USDT" : "https://www.bybit.com/en/trade/spot/" + base + "/USDT";
+    case "okx": return fut ? "https://www.okx.com/trade-swap/" + base.toLowerCase() + "-usdt-swap" : "https://www.okx.com/trade-spot/" + base.toLowerCase() + "-usdt";
+    case "bitget": return fut ? "https://www.bitget.com/futures/usdt/" + base + "USDT" : "https://www.bitget.com/spot/" + base + "USDT";
+    case "kucoin": return fut ? "https://www.kucoin.com/futures/trade/" + base + "USDTM" : "https://www.kucoin.com/trade/" + base + "-USDT";
+    default: return fut ? "https://www.binance.com/en/futures/" + base + "USDT" : "https://www.binance.com/en/trade/" + base + "_USDT?type=spot";
+  }
+}
+function orderText(s, pair) {
+  if (!s || !s.zone || s.sl == null) return "No active entry zone for " + pair + " right now.";
+  return pair + " " + (s.L ? "LONG" : "SHORT") + " (" + s.verdict + ")\nTimeframe: " + (s.tfLabel || "") + "\nEntry: " + fp(s.price) + "\nStop loss: " + fp(s.sl) + "\nTarget 1: " + fp(s.tp1) + "\nTarget 2: " + fp(s.tp2) + "\nTarget 3: " + fp(s.tp3);
+}
+function renderExchange(id) {
+  const el = $(id); if (!el) return;
+  const s = state.sig, ex = store.get("ex", "binance"), mk = store.get("exMarket", "spot");
+  el.innerHTML = '<h2>Trade on an exchange</h2><div class="field"><label>Exchange<select id="exSel">' + EXCHANGES.map(([k, n]) => '<option value="' + k + '"' + (k === ex ? " selected" : "") + '>' + n + '</option>').join("") + '</select></label>' +
+    '<label>Market<select id="exMk"><option value="spot"' + (mk === "spot" ? " selected" : "") + '>Spot</option><option value="futures"' + (mk === "futures" ? " selected" : "") + '>Futures</option></select></label></div>' +
+    '<div class="controls"><a id="exGo" class="primary" style="padding:8px 14px;border-radius:6px;text-decoration:none" target="_blank" rel="noopener noreferrer">Open ' + esc(coinOf(state.symbol)) + ' on exchange</a><button id="exCopy">Copy order details</button><span id="exMsg" class="note" style="margin:0"></span></div>' +
+    '<div class="note">This opens the coin on the exchange website or app. You place the order yourself, using the entry, stop loss and targets shown above. The app never asks for API keys and never trades for you. Pasting trading keys into a web page is risky, so it is left out on purpose. The signal pair is the Binance USDT pair, so check the price on your exchange before you enter.</div>';
+  const upd = () => { store.set("ex", $("exSel").value); store.set("exMarket", $("exMk").value); $("exGo").href = exchangeUrl($("exSel").value, state.symbol, $("exMk").value); };
+  $("exSel").addEventListener("change", upd); $("exMk").addEventListener("change", upd); upd();
+  $("exCopy").addEventListener("click", async () => {
+    const txt = orderText(s, state.symbol);
+    try { await navigator.clipboard.writeText(txt); $("exMsg").textContent = "Copied."; } catch (e) { $("exMsg").textContent = txt.replace(/\n/g, " | "); }
+  });
+}
+
 </script>
 <script>
 "use strict";
 /* Chart page: candles with EMAs, swing structure (HH, HL, LH, LL), support and resistance, breaks and retests,
    retracement levels, candle patterns, and shading for the last 50 and 100 candles. Drawn on a canvas. */
-const TOGGLES = [["tStruct", "HH / HL / LH / LL"], ["tSR", "Support and resistance"], ["tBrk", "Breaks and retests"], ["tFib", "Retracement"], ["tPat", "Candle patterns"], ["tWin", "Last 50 / 100 shading"]];
+const TOGGLES = [["tStruct", "HH / HL / LH / LL"], ["tSR", "Support and resistance"], ["tBrk", "Breaks and retests"], ["tFib", "Retracement"], ["tPat", "Candle patterns"], ["tWin", "Last 50 / 100 shading"], ["tHtf", "4H / 1H levels"], ["tOB", "Order blocks"], ["tBos", "BOS / CHoCH"], ["tLiq", "Liquidity"], ["tCp", "Chart patterns"]];
 const CHART_SKELETON =
   '<section class="card"><div class="status-row"><h2 style="margin:0">Chart · <span id="chartSym"></span></h2><div id="chartInfo" class="sub" style="margin:0"></div></div>' +
   '<div class="status-row"><div class="tabs" id="tfTabs" role="group" aria-label="Chart timeframe"></div><div class="controls" id="toggles"></div></div>' +
   '<canvas id="cv" height="440"></canvas><canvas id="cvr" height="90"></canvas>' +
   '<div class="legend"><span><i style="background:var(--ema20)"></i>EMA 20</span><span><i style="background:var(--ema50)"></i>EMA 50</span><span><i style="background:var(--ema200)"></i>EMA 200</span>' +
-  '<span class="up-t">HH / HL = higher highs and lows</span><span class="down-t">LH / LL = lower highs and lows</span><span style="color:var(--accent)">Gold = broken level, retracement</span><span>Bottom panel: RSI 14</span></div>' +
+  '<span class="up-t">HH / HL = higher highs and lows</span><span class="down-t">LH / LL = lower highs and lows</span><span style="color:var(--accent)">Gold = broken level, retracement</span><span>Bottom panel: RSI 14</span><span>Thick line = 4H level, dashed = 1H level</span><span class="up-t">Green box = bullish order block</span><span class="down-t">Red box = bearish order block</span><span style="color:#3b82f6">BOS</span><span style="color:#a855f7">CHoCH</span><span style="color:#d97706">Liquidity</span></div>' +
   '<div class="chips" id="srList"></div>' +
-  '<div class="note">Swing labels: a swing high higher than the one before is HH, lower is LH. A swing low higher than the one before is HL, lower is LL. Uptrend = HH + HL. Downtrend = LH + LL. BRK = price closed beyond a support or resistance zone. RT = price came back to test it. Dashed support and resistance lines are zones price turned from at least twice. The retracement shading is the 38.2% to 61.8% pullback zone of the latest leg. Arrows mark strong candle patterns. Full tables are on the <a href="analysis.html">Analysis</a> page.</div></section>';
+  '<div class="note">Swing labels: a swing high higher than the one before is HH, lower is LH. A swing low higher than the one before is HL, lower is LL. Uptrend = HH + HL. Downtrend = LH + LL. BRK = price closed beyond a support or resistance zone. RT = price came back to test it. Dashed support and resistance lines are zones price turned from at least twice. The retracement shading is the 38.2% to 61.8% pullback zone of the latest leg. Arrows mark strong candle patterns. Order blocks: the last opposite candle before a BOS or CHoCH, valid until price closes through it or it is tested twice. BOS = a close beyond the last swing in the trend direction, CHoCH = a close beyond the last swing against the trend. Full tables are on the <a href="analysis.html">Analysis</a> page.</div></section>';
 
 function setupCanvas(cv, h) {
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth || 800;
@@ -1499,6 +2062,81 @@ function drawChart() {
       tagText(ctx, z.side + " " + fp(z.p) + " x" + z.n, 4, yy - 3, col, cSurf, "left");
     });
   }
+  /* 4H and 1H support and resistance, drawn on every timeframe (4H thick line, 1H dashed) */
+  if (T("tHtf")) {
+    const usedY = []; ctx.font = "bold 10px " + mono;
+    keyLevels(state.A).forEach(Lv => {
+      if (Lv.tf === state.chartTf || Lv.p < lo || Lv.p > hi) return;
+      const yy = Math.round(y(Lv.p)) + 0.5, col = Lv.side === "R" ? cDown : cUp, h4 = Lv.tf === "4h";
+      ctx.strokeStyle = col; ctx.lineWidth = h4 ? 2.4 : 1.6; ctx.globalAlpha = h4 ? 0.85 : 0.7; ctx.setLineDash(h4 ? [] : [10, 4]);
+      ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(plotW, yy); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      if (!usedY.some(u => Math.abs(u - yy) < 14)) { usedY.push(yy); tagText(ctx, tfl(Lv.tf) + " " + Lv.side + " " + fp(Lv.p) + " x" + Lv.n, plotW * 0.42, yy - 3, col, cSurf, "left"); }
+    });
+    ctx.font = "11px " + mono;
+  }
+  /* order blocks: green = bullish, red = bearish. Solid = still valid, faint dashed = broken or used up */
+  if (T("tOB")) {
+    const ord = ["4h", "1h", "15m", "5m"], price0 = a.candles[n - 1].c;
+    const obs = allOrderBlocks(state.A).filter(o => o.hi >= lo && o.lo <= hi && (o.tf === state.chartTf ? (o.valid || o.age <= 100) : ((o.tf === "4h" || o.tf === "1h") && o.valid && ord.indexOf(o.tf) < ord.indexOf(state.chartTf))))
+      .sort((p, q) => (q.valid ? 1 : 0) - (p.valid ? 1 : 0) || Math.abs((p.lo + p.hi) / 2 - price0) - Math.abs((q.lo + q.hi) / 2 - price0)).slice(0, 6);
+    ctx.font = "bold 10px " + mono; const usedL = [];
+    obs.forEach(o => {
+      const x0 = o.tf === state.chartTf ? Math.max(0, xi(o.i) - colW / 2) : 0, y1 = y(o.hi), y2 = y(o.lo), col = o.bias === "bull" ? cUp : cDown, hh = Math.max(3, y2 - y1);
+      ctx.globalAlpha = o.valid ? 0.17 : 0.06; ctx.fillStyle = col; ctx.fillRect(x0, y1, plotW - x0, hh); ctx.globalAlpha = 1;
+      ctx.strokeStyle = col; ctx.lineWidth = o.valid ? 1.4 : 1; ctx.setLineDash(o.valid ? [] : [3, 3]); ctx.strokeRect(x0 + 0.5, y1, plotW - x0 - 1, hh); ctx.setLineDash([]);
+      const lab = (o.kind === "breaker" ? "BB" : "OB") + (o.bias === "bull" ? "▲ " : "▼ ") + tfl(o.tf) + (!o.valid ? " broken" : o.now.confirmed ? " ✓ confirmed" : o.now.inZone ? " in zone" : " valid");
+      const ly = y1 + 11; if (!usedL.some(u => Math.abs(u - ly) < 13)) { usedL.push(ly); tagText(ctx, lab, x0 + 4, ly, col, cSurf, "left"); }
+    });
+    ctx.font = "11px " + mono;
+  }
+  /* liquidity: equal highs/lows and resting stops, sweeps, trendline liquidity */
+  if (T("tLiq")) {
+    const LQ = liquidityOf(a), cLq = "#d97706"; ctx.font = "bold 10px " + mono;
+    LQ.live.forEach(q => {
+      if (q.p < lo || q.p > hi) return;
+      const x0 = xi(Math.max(q.i, s0)), yy = Math.round(y(q.p)) + 0.5;
+      ctx.strokeStyle = cLq; ctx.lineWidth = 1; ctx.setLineDash([1, 3]); ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(plotW, yy); ctx.stroke(); ctx.setLineDash([]);
+      tagText(ctx, (q.kind === "equal" ? (q.side === "buy" ? "EQH " : "EQL ") : (q.side === "buy" ? "BSL " : "SSL ")) + fp(q.p), plotW - 4, yy + (q.side === "buy" ? -3 : 13), cLq, cSurf, "right");
+    });
+    LQ.sweeps.forEach(q => {
+      if (q.sweepI < s0 || q.p < lo || q.p > hi) return;
+      const px = xi(q.sweepI), py = y(q.p);
+      ctx.fillStyle = cLq; ctx.beginPath(); ctx.moveTo(px, py - 5); ctx.lineTo(px + 5, py); ctx.lineTo(px, py + 5); ctx.lineTo(px - 5, py); ctx.fill();
+      tagText(ctx, "SWEEP " + (q.side === "buy" ? "▼" : "▲"), px, q.side === "buy" ? py - 9 : py + 20, cLq, cSurf, "center");
+    });
+    LQ.trend.forEach(t => {
+      const x0 = xi(Math.max(t.p1.i, s0)), slope = (t.p2.p - t.p1.p) / (t.p2.i - t.p1.i), yAt = i => t.p1.p + slope * (i - t.p1.i);
+      ctx.strokeStyle = cLq; ctx.lineWidth = 1.2; ctx.setLineDash([8, 3]); ctx.beginPath(); ctx.moveTo(x0, y(yAt(Math.max(t.p1.i, s0)))); ctx.lineTo(plotW, y(yAt(end + 2))); ctx.stroke(); ctx.setLineDash([]);
+      tagText(ctx, "trendline liquidity", plotW - 4, y(yAt(end)) + (t.side === "buy" ? -6 : 16), cLq, cSurf, "right");
+    });
+    ctx.font = "11px " + mono;
+  }
+  /* BOS and CHoCH */
+  if (T("tBos")) {
+    ctx.font = "bold 10px " + mono;
+    structureEvents(a).filter(e => e.i >= s0 && e.i <= end && e.p >= lo && e.p <= hi).slice(-8).forEach(e => {
+      const x1 = xi(Math.max(e.swing.i, s0)), x2 = xi(e.i), yy = Math.round(y(e.p)) + 0.5, col = e.kind === "BOS" ? "#3b82f6" : "#a855f7";
+      ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(x1, yy); ctx.lineTo(x2, yy); ctx.stroke(); ctx.setLineDash([]);
+      tagText(ctx, e.kind + (e.dir === "up" ? " ▲" : " ▼"), (x1 + x2) / 2, e.dir === "up" ? yy - 4 : yy + 15, col, cSurf, "center");
+    });
+    ctx.font = "11px " + mono;
+  }
+  /* chart patterns (double top, head and shoulders, wedges, flags ...) */
+  if (T("tCp")) {
+    ctx.save(); ctx.beginPath(); ctx.rect(0, padT, plotW, priceH); ctx.clip(); ctx.font = "bold 10px " + mono;
+    chartPatternsOf(a).slice(0, 3).forEach(p => {
+      const col = p.bias === "bull" ? cUp : cDown;
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+      const poly = pts => { ctx.beginPath(); pts.forEach((q, k) => { if (k === 0) ctx.moveTo(xi(q.i), y(q.p)); else ctx.lineTo(xi(q.i), y(q.p)); }); ctx.stroke(); };
+      if (p.pts.length) poly(p.pts); if (p.curve) poly(p.curve);
+      ctx.lineWidth = 1.4; ctx.setLineDash([6, 4]); p.lines.forEach(L => poly(L)); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      const lastP = p.pts.length ? p.pts[p.pts.length - 1] : { i: end, p: p.neck };
+      if (p.target >= lo && p.target <= hi) { ctx.setLineDash([1, 4]); ctx.beginPath(); ctx.moveTo(xi(Math.max(lastP.i, s0)), y(p.target)); ctx.lineTo(plotW, y(p.target)); ctx.stroke(); ctx.setLineDash([]); }
+      const ly = Math.min(Math.max(y(p.neck) + (p.bias === "bull" ? 14 : -6), padT + 12), padT + priceH - 4);
+      tagText(ctx, p.name + " (" + p.status + ")" + (p.target >= lo && p.target <= hi ? " target " + fp(p.target) : ""), Math.min(Math.max(xi(Math.max(p.i0, s0)), 4), plotW * 0.5), ly, col, cSurf, "left");
+    });
+    ctx.restore(); ctx.font = "11px " + mono;
+  }
   /* breaks and retests */
   if (T("tBrk")) {
     breaks.forEach(e => {
@@ -1574,6 +2212,10 @@ function drawChart() {
   L.res.slice().reverse().forEach(z => chips.push('<span class="chip r">R ' + fp(z.p) + ' x' + z.n + ' (' + (100 * (z.p / price - 1)).toFixed(2) + '%)</span>'));
   L.sup.forEach(z => chips.push('<span class="chip s">S ' + fp(z.p) + ' x' + z.n + ' (' + (100 * (z.p / price - 1)).toFixed(2) + '%)</span>'));
   if (ret) chips.push('<span class="chip n">Pullback zone ' + fp(ret.golden[0]) + ' to ' + fp(ret.golden[1]) + (ret.inGolden ? ' (price is inside)' : '') + '</span>');
+  const klv = keyLevels(state.A).filter(z => z.tf !== state.chartTf);
+  klv.filter(z => z.side === "R").sort((p, q) => q.p - p.p).forEach(z => chips.unshift('<span class="chip r">' + tfl(z.tf) + ' R ' + fp(z.p) + ' x' + z.n + '</span>'));
+  klv.filter(z => z.side === "S").sort((p, q) => q.p - p.p).forEach(z => chips.push('<span class="chip s">' + tfl(z.tf) + ' S ' + fp(z.p) + ' x' + z.n + '</span>'));
+  chartPatternsOf(a).slice(0, 3).forEach(p => chips.push('<span class="chip ' + (p.bias === "bull" ? "u" : "d") + '">' + esc(p.name) + ' ' + p.status + '</span>'));
   $("srList").innerHTML = chips.join("");
 }
 function renderChartPage() { $("chartSym").textContent = state.symbol + (state.demo ? " (demo data)" : ""); chartTabs(); drawChart(); }

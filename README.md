@@ -13,3 +13,5 @@ Pages: Signals (index), Chart, Analysis, TradingView, Sessions, CPI, US jobs, Fe
 - Alerts only fire while the Signals page is open. Optional Telegram.
 
 Not financial advice. Test on paper first.
+
+New: 4H levels are confirmed on the 15m chart and 1H levels on the 5m chart (reversal or trend break). Order blocks, breaker blocks, FVG, BOS/CHoCH, liquidity sweeps, equal highs/lows and 16 chart patterns are marked and used in the signal. Each signal shows its timeframe.
