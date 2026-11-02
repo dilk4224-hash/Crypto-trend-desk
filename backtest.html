@@ -1968,7 +1968,7 @@ const BT_SKEL = '<section class="card"><h2>Backtest on real Binance candles</h2>
   '<label>Minimum stop (x 15m ATR)<select id="btMinStop"><option value="0">as the engine gives</option><option value="1">1.0</option><option value="1.5">1.5</option><option value="2">2.0</option><option value="3">3.0</option></select></label></div>' +
   '<div class="controls"><button id="btGo" class="primary">Download and scan</button><button id="btRe">Re-apply filters</button><button id="btExpGo" disabled>Find settings that work (train and test)</button><button id="btStop" disabled>Cancel</button></div>' +
   '<div class="meter" style="margin-top:10px"><div class="lvl"><span id="btProg">Not started.</span></div></div></section>' +
-  '<section class="card" id="btOut" hidden></section><section class="card" id="btExp" hidden></section>';
+  '<section class="card" id="btExp" hidden></section><section class="card" id="btOut" hidden></section>';
 
 let btCancel = false;
 async function btFetch(symbol, tf, from, to) {
@@ -2061,13 +2061,17 @@ const BT = { cands: {}, c5: {}, t0: 0, t1: 0 };
 const BT_ZONES = [["all entry types", null], ["PULLBACK", ["PULLBACK"]], ["ORDER BLOCK", ["ORDER BLOCK"]], ["TRAP", ["TRAP"]], ["RETEST", ["RETEST"]], ["PULLBACK + ORDER BLOCK", ["PULLBACK", "ORDER BLOCK"]], ["not RETEST/TRAP", ["PULLBACK", "ORDER BLOCK", "BREAKOUT"]]];
 const BT_TFS = [["all zone timeframes", null], ["1H + 4H zones", ["1H", "4H"]], ["1H zones", ["1H"]], ["5m + 15m zones", ["5m", "15m"]]];
 async function btExplore() {
-  const box = $("btExp"); box.hidden = false; box.innerHTML = '<h2>Looking for settings that work</h2><div class="sub" id="btExpMsg">Working...</div>';
+  const box = $("btExp"); box.hidden = false; box.innerHTML = '<h2>Looking for settings that work</h2><div class="sub" id="btExpMsg">Working... please wait, this can take a minute on a phone.</div>';
+  try { box.scrollIntoView({ block: "start" }); } catch (e) { /* ignore */ }
+  try { await btExplore2(box); } catch (e) { box.innerHTML = '<h2>Settings test</h2><div class="banner">Something went wrong: ' + esc(e && e.message ? e.message : e) + '. Press Download and scan again, then try once more.</div>'; }
+}
+async function btExplore2(box) {
   const split = BT.t0 + 0.6 * (BT.t1 - BT.t0), res = []; let done = 0;
   const total = 2 * BT_ZONES.length * BT_TFS.length * 3 * 5;
   for (const verdict of ["SETUP", "TRIGGER"]) for (const [zn, zones] of BT_ZONES) for (const [tn, tfs] of BT_TFS) for (const dir of ["both", "long", "short"]) for (const rm of [0, 1, 1.5, 2, 3]) {
     if (btCancel) break;
     const base = { verdict, zones, tfs, dir, rm }, tr = btEval({ ...base, t0: BT.t0, t1: split }), te = btEval({ ...base, t0: split, t1: BT.t1 + 1 });
-    done++; if (done % 12 === 0) { $("btExpMsg").textContent = "Tried " + done + " of " + total + " settings..."; await sleep(0); }
+    done++; if (done % 12 === 0) { $("btExpMsg").textContent = "Tried " + done + " of " + total + " settings..."; $("btProg").textContent = "Finding settings: " + done + " of " + total; await sleep(0); }
     if (tr.length < 20 || te.length < 8) continue;
     for (const n of [1, 2, 3]) res.push({ label: (verdict === "SETUP" ? "Full SETUP" : "Zone + candle only") + ", " + zn + ", " + tn + ", " + dir + ", stop " + (rm ? rm + " x ATR" : "engine's own") + ", exit at target " + n, tr: btStats(tr, n), te: btStats(te, n) });
   }
@@ -2134,7 +2138,7 @@ function btSetup() {
     $("btGo").disabled = false; $("btStop").disabled = true;
   });
   $("btStop").addEventListener("click", () => { btCancel = true; });
-  $("btExpGo").addEventListener("click", async () => { $("btExpGo").disabled = true; btCancel = false; $("btStop").disabled = false; await btExplore(); $("btStop").disabled = true; $("btExpGo").disabled = false; });
+  $("btExpGo").addEventListener("click", async () => { if (!Object.keys(BT.cands).length) { $("btProg").textContent = "Press Download and scan first."; return; } $("btExpGo").disabled = true; btCancel = false; $("btStop").disabled = false; await btExplore(); $("btStop").disabled = true; $("btExpGo").disabled = false; $("btProg").textContent = "Settings test finished."; });
   $("btRe").addEventListener("click", () => {
     if (!Object.keys(BT.cands).length) { $("btProg").textContent = "Press Download and scan first."; return; }
     const types = [].slice.call(document.querySelectorAll("#btTypes input:checked")).map(x => x.dataset.t), tfs = [].slice.call(document.querySelectorAll("#btTfs input:checked")).map(x => x.dataset.f);
