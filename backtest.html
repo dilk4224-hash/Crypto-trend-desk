@@ -1960,9 +1960,15 @@ const BT_SKEL = '<section class="card"><h2>Backtest on real Binance candles</h2>
   '<label>Days of history<select id="btDays"><option>7</option><option selected>14</option><option>30</option><option>60</option></select></label>' +
   '<label>Check signals every<select id="btStep"><option value="15">15 minutes</option><option value="5">5 minutes (slower)</option></select></label>' +
   '<label>Fees, round trip (%)<input id="btFee" value="0.1" inputmode="decimal"></label></div>' +
-  '<div class="controls"><button id="btGo" class="primary">Start backtest</button><button id="btStop" disabled>Cancel</button></div>' +
+  '<h3>Filters (change these and press Re-apply, no new download)</h3>' +
+  '<div class="sess-checks" id="btTypes">' + ["TRAP", "RETEST", "PULLBACK", "ORDER BLOCK", "BREAKOUT"].map(x => '<label class="chk"><input type="checkbox" data-t="' + x + '" checked> ' + x + '</label>').join("") + '</div>' +
+  '<div class="sess-checks" id="btTfs">' + ["5m", "15m", "1H", "4H"].map(x => '<label class="chk"><input type="checkbox" data-f="' + x + '" checked> zone ' + x + '</label>').join("") + '</div>' +
+  '<div class="field"><label>Direction<select id="btDir"><option value="both">Long and short</option><option value="long">Long only</option><option value="short">Short only</option></select></label>' +
+  '<label>Minimum score<select id="btScore"><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option></select></label>' +
+  '<label>Minimum stop (x 15m ATR)<select id="btMinStop"><option value="0">as the engine gives</option><option value="1">1.0</option><option value="1.5">1.5</option><option value="2">2.0</option><option value="3">3.0</option></select></label></div>' +
+  '<div class="controls"><button id="btGo" class="primary">Download and scan</button><button id="btRe">Re-apply filters</button><button id="btExpGo" disabled>Find settings that work (train and test)</button><button id="btStop" disabled>Cancel</button></div>' +
   '<div class="meter" style="margin-top:10px"><div class="lvl"><span id="btProg">Not started.</span></div></div></section>' +
-  '<section class="card" id="btOut" hidden></section>';
+  '<section class="card" id="btOut" hidden></section><section class="card" id="btExp" hidden></section>';
 
 let btCancel = false;
 async function btFetch(symbol, tf, from, to) {
@@ -2004,47 +2010,89 @@ async function btCoin(symbol, days, stepMin, setProg) {
   for (const tf of TFS) {
     setProg("Downloading " + coinOf(symbol) + " " + tf.id + " candles...");
     data[tf.id] = (await btFetch(symbol, tf, start - 310 * tf.ms, end)).filter(k => k.t + tf.ms <= end);
-    if (btCancel) return [];
+    if (btCancel) return { cands: [], c5: [] };
     if (data[tf.id].length < 250) throw new Error("not enough " + tf.id + " candles for " + symbol);
   }
   const c5 = data["5m"], idx = {}; TFS.forEach(tf => { idx[tf.id] = 0; });
-  const stepMs = stepMin * 60000, trades = []; let busy = 0, n = 0;
+  const stepMs = stepMin * 60000, cands = []; let n = 0;
   const total = Math.floor((end - start) / stepMs);
   for (let T = Math.ceil(start / stepMs) * stepMs; T <= end; T += stepMs) {
     if (btCancel) break;
-    n++; if (n % 8 === 0) { setProg(coinOf(symbol) + ": step " + n + " of about " + total + ", " + trades.length + " setups found"); await sleep(0); }
+    n++; if (n % 8 === 0) { setProg(coinOf(symbol) + ": step " + n + " of about " + total + ", " + cands.length + " candidates"); await sleep(0); }
     TFS.forEach(tf => { const a = data[tf.id]; while (idx[tf.id] < a.length && a[idx[tf.id]].t + tf.ms <= T) idx[tf.id]++; });
-    if (T < busy) continue;
     const i5 = idx["5m"]; if (i5 < 250 || c5[i5 - 1].t + 300000 !== T) continue;
     const price = c5[i5 - 1].c, A = {};
     for (const tf of TFS) {
       const a = data[tf.id], closed = a.slice(Math.max(0, idx[tf.id] - 300), idx[tf.id]), ps = Math.floor(T / tf.ms) * tf.ms;
-      let o = price, h = price, l = price, v = 0, first = true;
-      for (let q = i5 - 1; q >= 0 && c5[q].t >= ps; q--) { const k = c5[q]; if (first) { first = false; } o = k.o; h = Math.max(h, k.h); l = Math.min(l, k.l); v += k.v; }
+      let o = price, h = price, l = price, v = 0;
+      for (let q = i5 - 1; q >= 0 && c5[q].t >= ps; q--) { const k = c5[q]; o = k.o; h = Math.max(h, k.h); l = Math.min(l, k.l); v += k.v; }
       A[tf.id] = analyze(closed.concat([{ t: ps, o, h, l, c: price, v }]), tf);
     }
     let sig; try { sig = buildSignal(A); } catch (e) { continue; }
-    if (sig.verdict.indexOf("SETUP") < 0 || sig.sl == null || !sig.risk) continue;
-    const r = btSim(c5, i5, sig.L, price, sig.risk), m = btSim(c5, i5, !sig.L, price, sig.risk);
-    const feeR = btFee() / 100 * price / sig.risk;
-    trades.push({ pair: symbol, t: T, L: sig.L, zone: sig.zone ? sig.zone.type : "-", tf: sig.zone ? tfl(sig.zone.tf) : "-", price, risk: sig.risk, score: sig.score, r, m, feeR });
-    busy = T + r.bars * 300000;
+    if (!sig.side || !sig.zone || sig.sl == null || !sig.risk) continue;
+    cands.push({ pair: symbol, T, i5, L: sig.L, zone: sig.zone.type, tf: tfl(sig.zone.tf), score: sig.score, setup: sig.verdict.indexOf("SETUP") > -1, trgOk: !!sig.trg.ok, risk: sig.risk, atr15: sig.atr15, price });
   }
-  return trades;
+  return { cands, c5 };
 }
 const btFee = () => { const x = parseFloat($("btFee").value); return isFinite(x) && x >= 0 ? x : 0.1; };
+
+/* Replay candidates one trade at a time per coin, using filters f. rm = stop distance in 15m ATR (0 = the engine's own stop). */
+function btEval(f, withMirror) {
+  const out = [];
+  for (const pair of Object.keys(BT.cands)) {
+    const c5 = BT.c5[pair]; let busy = 0;
+    for (const c of BT.cands[pair]) {
+      if (c.T < busy || c.T < f.t0 || c.T >= f.t1) continue;
+      if (f.verdict === "SETUP" ? !c.setup : !c.trgOk) continue;
+      if (f.zones && f.zones.indexOf(c.zone) < 0) continue;
+      if (f.tfs && f.tfs.indexOf(c.tf) < 0) continue;
+      if (f.dir === "long" && !c.L) continue; if (f.dir === "short" && c.L) continue;
+      if (f.minScore && c.score < f.minScore) continue;
+      const risk = f.rm ? f.rm * c.atr15 : c.risk, key = f.rm || 0; c._s = c._s || {}; c._m = c._m || {};
+      const r = c._s[key] || (c._s[key] = btSim(c5, c.i5, c.L, c.price, risk));
+      const t = { pair, t: c.T, L: c.L, zone: c.zone, tf: c.tf, price: c.price, risk, score: c.score, r, feeR: btFee() / 100 * c.price / risk };
+      if (withMirror) t.m = c._m[key] || (c._m[key] = btSim(c5, c.i5, !c.L, c.price, risk));
+      out.push(t); busy = c.T + r.bars * 300000;
+    }
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+const BT = { cands: {}, c5: {}, t0: 0, t1: 0 };
+const BT_ZONES = [["all entry types", null], ["PULLBACK", ["PULLBACK"]], ["ORDER BLOCK", ["ORDER BLOCK"]], ["TRAP", ["TRAP"]], ["RETEST", ["RETEST"]], ["PULLBACK + ORDER BLOCK", ["PULLBACK", "ORDER BLOCK"]], ["not RETEST/TRAP", ["PULLBACK", "ORDER BLOCK", "BREAKOUT"]]];
+const BT_TFS = [["all zone timeframes", null], ["1H + 4H zones", ["1H", "4H"]], ["1H zones", ["1H"]], ["5m + 15m zones", ["5m", "15m"]]];
+async function btExplore() {
+  const box = $("btExp"); box.hidden = false; box.innerHTML = '<h2>Looking for settings that work</h2><div class="sub" id="btExpMsg">Working...</div>';
+  const split = BT.t0 + 0.6 * (BT.t1 - BT.t0), res = []; let done = 0;
+  const total = 2 * BT_ZONES.length * BT_TFS.length * 3 * 5;
+  for (const verdict of ["SETUP", "TRIGGER"]) for (const [zn, zones] of BT_ZONES) for (const [tn, tfs] of BT_TFS) for (const dir of ["both", "long", "short"]) for (const rm of [0, 1, 1.5, 2, 3]) {
+    if (btCancel) break;
+    const base = { verdict, zones, tfs, dir, rm }, tr = btEval({ ...base, t0: BT.t0, t1: split }), te = btEval({ ...base, t0: split, t1: BT.t1 + 1 });
+    done++; if (done % 12 === 0) { $("btExpMsg").textContent = "Tried " + done + " of " + total + " settings..."; await sleep(0); }
+    if (tr.length < 20 || te.length < 8) continue;
+    for (const n of [1, 2, 3]) res.push({ label: (verdict === "SETUP" ? "Full SETUP" : "Zone + candle only") + ", " + zn + ", " + tn + ", " + dir + ", stop " + (rm ? rm + " x ATR" : "engine's own") + ", exit at target " + n, tr: btStats(tr, n), te: btStats(te, n) });
+  }
+  const pos = res.filter(x => x.tr.avg > 0), held = pos.filter(x => x.te.avg > 0);
+  const top = res.slice().sort((a, b) => b.tr.avg - a.tr.avg).slice(0, 12);
+  const row = x => '<tr><td class="wrapc">' + esc(x.label) + '</td><td class="num">' + x.tr.n + '</td><td class="num ' + (x.tr.avg > 0 ? "up-t" : "down-t") + '">' + (x.tr.avg >= 0 ? "+" : "") + x.tr.avg.toFixed(2) + ' R</td><td class="num">' + x.te.n + '</td><td class="num ' + (x.te.avg > 0 ? "up-t" : "down-t") + '">' + (x.te.avg >= 0 ? "+" : "") + x.te.avg.toFixed(2) + ' R</td><td>' + (x.tr.avg > 0 && x.te.avg > 0 ? '<span class="pill up">HELD</span>' : '<span class="pill down">FAILED</span>') + '</td></tr>';
+  const heldTop = held.slice().sort((a, b) => (a.tr.avg + a.te.avg) - (b.tr.avg + b.te.avg)).reverse().slice(0, 8);
+  box.innerHTML = '<h2>Settings test: first 60% of the time to find, last 40% to check</h2>' +
+    '<div class="sub">' + res.length + ' combinations had enough trades. ' + pos.length + ' were profitable in the first part, and only ' + held.length + ' were profitable in the second part too. With this many tries, some will look good by pure luck, so only trust a setting that holds in both parts, with many trades, and again on a different month.</div>' +
+    '<h3>Best in the first part, and what happened in the second part</h3><div class="tbl"><table><thead><tr><th>Setting</th><th>Trades (1st)</th><th>Avg per trade (1st)</th><th>Trades (2nd)</th><th>Avg per trade (2nd)</th><th>Result</th></tr></thead><tbody>' + top.map(row).join("") + '</tbody></table></div>' +
+    (heldTop.length ? '<h3>Settings that were profitable in both parts</h3><div class="tbl"><table><thead><tr><th>Setting</th><th>Trades (1st)</th><th>Avg per trade (1st)</th><th>Trades (2nd)</th><th>Avg per trade (2nd)</th><th>Result</th></tr></thead><tbody>' + heldTop.map(row).join("") + '</tbody></table></div>' : '<div class="banner">No setting was profitable in both parts. That means nothing here is reliable yet.</div>') +
+    '<div class="note">Fees are included. Stops are checked before targets inside a candle. R is the risk on one trade.</div>';
+}
 
 function btStats(list, n, mirror) {
   const R = list.map(t => btR(mirror ? t.m : t.r, n) - t.feeR), wins = list.filter(t => btR(mirror ? t.m : t.r, n) > 0).length;
   const gw = R.filter(x => x > 0).reduce((s, x) => s + x, 0), gl = -R.filter(x => x <= 0).reduce((s, x) => s + x, 0);
   let eq = 0, pk = 0, dd = 0; R.forEach(x => { eq += x; pk = Math.max(pk, eq); dd = Math.max(dd, pk - eq); });
-  return { n: list.length, win: list.length ? wins / list.length * 100 : 0, avg: list.length ? eq / list.length : 0, total: eq, pf: gl ? gw / gl : (gw ? Infinity : 0), dd };
+  return { n: list.length, win: list.length ? wins / list.length * 100 : 0, avg: list.length ? eq / list.length : 0, gross: list.length ? list.reduce((a, t) => a + btR(mirror ? t.m : t.r, n), 0) / list.length : 0, total: eq, pf: gl ? gw / gl : (gw ? Infinity : 0), dd };
 }
 function btRow(label, s) {
   const c = s.avg > 0 ? "up-t" : s.avg < 0 ? "down-t" : "mute-t";
-  return '<tr><td>' + label + '</td><td class="num">' + s.n + '</td><td class="num">' + s.win.toFixed(0) + '%</td><td class="num ' + c + '">' + (s.avg >= 0 ? "+" : "") + s.avg.toFixed(2) + ' R</td><td class="num ' + c + '">' + (s.total >= 0 ? "+" : "") + s.total.toFixed(1) + ' R</td><td class="num">' + (s.pf === Infinity ? "inf" : s.pf.toFixed(2)) + '</td><td class="num">' + s.dd.toFixed(1) + ' R</td></tr>';
+  return '<tr><td>' + label + '</td><td class="num">' + s.n + '</td><td class="num">' + s.win.toFixed(0) + '%</td><td class="num ' + c + '">' + (s.avg >= 0 ? "+" : "") + s.avg.toFixed(2) + ' R</td><td class="num">' + (s.gross >= 0 ? "+" : "") + s.gross.toFixed(2) + ' R</td><td class="num ' + c + '">' + (s.total >= 0 ? "+" : "") + s.total.toFixed(1) + ' R</td><td class="num">' + (s.pf === Infinity ? "inf" : s.pf.toFixed(2)) + '</td><td class="num">' + s.dd.toFixed(1) + ' R</td></tr>';
 }
-const BT_HEAD = '<thead><tr><th>Case</th><th>Trades</th><th>Win rate</th><th>Avg per trade</th><th>Total</th><th>Profit factor</th><th>Worst drawdown</th></tr></thead>';
+const BT_HEAD = '<thead><tr><th>Case</th><th>Trades</th><th>Win rate</th><th>Avg per trade (after fees)</th><th>Avg before fees</th><th>Total after fees</th><th>Profit factor</th><th>Worst drawdown</th></tr></thead>';
 function btRender(all, days) {
   const out = $("btOut"); out.hidden = false;
   if (!all.length) { out.innerHTML = '<h2>Result</h2><div class="sub">No SETUP signal appeared in this period. Try more days or more coins.</div>'; return; }
@@ -2071,19 +2119,30 @@ function btSetup() {
     if (!coins.length) return;
     btCancel = false; $("btGo").disabled = true; $("btStop").disabled = false; $("btOut").hidden = true;
     const realMacro = macroState; macroState = () => ({ block: null, caution: null, next: null, bias: { label: "neutral", text: "Backtest: news filter off", parts: [], total: 0 }, events: [] });
-    const all = [], errs = [];
+    const errs = []; BT.cands = {}; BT.c5 = {};
     try {
       for (const c of coins) {
         if (btCancel) break;
-        try { (await btCoin(c, days, step, s => { $("btProg").textContent = s; })).forEach(t => all.push(t)); } catch (e) { errs.push(coinOf(c) + ": " + (e && e.message ? e.message : e)); }
+        try { const r = await btCoin(c, days, step, s => { $("btProg").textContent = s; }); BT.cands[c] = r.cands; BT.c5[c] = r.c5; } catch (e) { errs.push(coinOf(c) + ": " + (e && e.message ? e.message : e)); }
       }
     } finally { macroState = realMacro; }
-    all.sort((a, b) => a.t - b.t);
+    BT.t1 = Math.floor(Date.now() / 300000) * 300000; BT.t0 = BT.t1 - days * 864e5;
+    const all = btEval({ verdict: "SETUP", zones: null, tfs: null, dir: "both", rm: 0, t0: BT.t0, t1: BT.t1 + 1 }, true);
     $("btProg").textContent = (btCancel ? "Cancelled. " : "Finished. ") + all.length + " trades." + (errs.length ? " Problems: " + errs.join("; ") : "");
-    btRender(all, days);
+    btRender(all, days); $("btExp").hidden = true;
+    $("btExpGo").disabled = btCancel || !Object.keys(BT.cands).length;
     $("btGo").disabled = false; $("btStop").disabled = true;
   });
   $("btStop").addEventListener("click", () => { btCancel = true; });
+  $("btExpGo").addEventListener("click", async () => { $("btExpGo").disabled = true; btCancel = false; $("btStop").disabled = false; await btExplore(); $("btStop").disabled = true; $("btExpGo").disabled = false; });
+  $("btRe").addEventListener("click", () => {
+    if (!Object.keys(BT.cands).length) { $("btProg").textContent = "Press Download and scan first."; return; }
+    const types = [].slice.call(document.querySelectorAll("#btTypes input:checked")).map(x => x.dataset.t), tfs = [].slice.call(document.querySelectorAll("#btTfs input:checked")).map(x => x.dataset.f);
+    const f = { verdict: "SETUP", zones: types, tfs, dir: $("btDir").value, minScore: +$("btScore").value, rm: +$("btMinStop").value, t0: BT.t0, t1: BT.t1 + 1 };
+    const all = btEval(f, true);
+    $("btProg").textContent = "Filters applied. " + all.length + " trades.";
+    btRender(all, Math.round((BT.t1 - BT.t0) / 864e5));
+  });
 }
 boot({ file: "backtest.html", title: "Backtest", data: false, symbolBox: false, skeleton: BT_SKEL, render: () => {}, init: btSetup });
 
