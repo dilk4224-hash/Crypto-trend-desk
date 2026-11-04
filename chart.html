@@ -155,6 +155,8 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 .meter .lvl b { font-size: 13px; }
 @media (max-width: 520px) { .price { font-size: 22px; } }
 
+.pill.dir { background: var(--fg); color: var(--bg); } .pill.ind { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+
 </style>
 </head>
 <body>
@@ -1107,6 +1109,149 @@ function chartPatternsOf(a) {
 </script>
 <script>
 "use strict";
+/* Trendlines, order blocks sitting on them, and confirmation of a trendline break.
+   A support line joins two or more rising swing lows. A resistance line joins two or more falling swing highs.
+   A break counts as CONFIRMED only when the candle is strong (close beyond the line by a buffer, big body)
+   AND volume is above average AND price stays beyond the line afterwards. A retest of the line from the other side is a bonus. */
+const TL_BUF = 0.25, TL_BODY = 0.5, TL_VOL = 1.3;
+
+function trendlinesOf(a) {
+  if (a._tl) return a._tl;
+  const c = a.candles, n = c.length, end = n - 2, out = [];
+  const atrAtI = i => a.atr[i] || a.atr[end] || (c[i].h - c[i].l) || 1e-9;
+  const sw = a.swings.filter(s => s.i >= end - 260 && s.i <= end);
+  [["L", "sup"], ["H", "res"]].forEach(([type, role]) => {
+    const pts = sw.filter(s => s.type === type).slice(-12), cand = [], up = role === "sup";
+    for (let j = 0; j < pts.length; j++) for (let k = j + 1; k < pts.length; k++) {
+      const p1 = pts[j], p2 = pts[k];
+      if (p2.i - p1.i < 5) continue;
+      const slope = (p2.p - p1.p) / (p2.i - p1.i);
+      if (up ? slope <= 0 : slope >= 0) continue;
+      const yAt = i => p1.p + slope * (i - p1.i), atr = atrAtI(p2.i);
+      if (Math.abs(slope) * 20 > 5 * atr) continue;               /* too steep to be a real trendline */
+      let bad = false;
+      for (let i = p1.i + 1; i < p2.i && !bad; i++) {
+        const y = yAt(i);
+        if (up ? (c[i].c < y - 0.15 * atr || c[i].l < y - 0.6 * atr) : (c[i].c > y + 0.15 * atr || c[i].h > y + 0.6 * atr)) bad = true;
+      }
+      if (bad) continue;
+      /* touches: candle extremes that reach the line and bounce, at least 3 candles apart */
+      let touches = 0, lastT = -9, lastTouch = p2.i, brk = null; const ts = [];
+      for (let i = p1.i; i <= end; i++) {
+        const y = yAt(i), at = atrAtI(i);
+        if (i > p2.i && (up ? c[i].c < y - 0.1 * at : c[i].c > y + 0.1 * at)) { brk = i; break; }
+        const reach = up ? c[i].l <= y + 0.25 * at && c[i].l >= y - 0.6 * at : c[i].h >= y - 0.25 * at && c[i].h <= y + 0.6 * at;
+        if (reach && i - lastT >= 3) { touches++; lastT = i; lastTouch = i; ts.push(i); }
+      }
+      if (touches < 2) continue;
+      if (brk != null && end - brk > 40) continue;                /* an old, long broken line is not useful */
+      if (brk == null && end - lastTouch > 80) continue;
+      cand.push({ role, up, p1, p2, slope, touches, ts, lastTouch, brkI: brk, yAt, span: p2.i - p1.i });
+    }
+    cand.sort((x, y) => (y.brkI == null ? 1 : 0) - (x.brkI == null ? 1 : 0) || y.touches - x.touches || y.lastTouch - x.lastTouch || y.span - x.span);
+    const live = cand.filter(x => x.brkI == null).slice(0, 1), broken = cand.filter(x => x.brkI != null).sort((x, y) => y.brkI - x.brkI).slice(0, 1);
+    live.concat(broken).forEach(x => out.push(x));
+  });
+  out.forEach(L => {
+    L.nowP = L.yAt(n - 1); L.endP = L.yAt(end);
+    const price = c[n - 1].c, atr = atrAtI(end);
+    L.dist = (price - L.nowP) / price; L.distAtr = (price - L.nowP) / atr;
+    L.near = Math.abs(price - L.nowP) <= 0.6 * atr;
+    L.brk = L.brkI != null ? tlBreakCheck(a, L) : null;
+    L.status = L.brk ? L.brk.status : "intact";
+    L.name = L.up ? "Rising support line" : "Falling resistance line";
+  });
+  return (a._tl = out);
+}
+/* Confirmation of a break: candle strength + volume + follow-through + retest. */
+function tlBreakCheck(a, L) {
+  const c = a.candles, n = c.length, end = n - 2, up = L.up, b0 = L.brkI;
+  const atrAtI = i => a.atr[i] || a.atr[end] || 1e-9;
+  const dirName = up ? "down" : "up";
+  const sgn = up ? -1 : 1;                         /* beyond the line = sgn * (close - line) > 0 */
+  let best = null;
+  for (let i = b0; i <= Math.min(b0 + 2, end); i++) {
+    const k = c[i], y = L.yAt(i), at = atrAtI(i), rng = k.h - k.l || 1e-9, body = Math.abs(k.c - k.o);
+    const beyond = sgn * (k.c - y) / at, colourOk = up ? k.c < k.o : k.c > k.o;
+    const candleOk = beyond >= TL_BUF && body >= TL_BODY * rng && colourOk;
+    const vAvg = a.volSma[i - 1] || a.volSma[i] || 0, volX = vAvg ? k.v / vAvg : 0, volOk = volX >= TL_VOL;
+    const row = { i, candleOk, volOk, volX, beyond, body: body / rng, score: (candleOk ? 1 : 0) + (volOk ? 1 : 0) + (i === b0 ? 0.1 : 0) };
+    if (!best || row.score > best.score) best = row;
+  }
+  const lastClose = c[end].c, holds = sgn * (lastClose - L.yAt(end)) > -0.1 * atrAtI(end);
+  let closedBack = false;
+  for (let i = b0 + 1; i <= end; i++) if (sgn * (c[i].c - L.yAt(i)) < -0.25 * atrAtI(i)) { closedBack = true; break; }
+  /* retest: after the break price comes back to the line from the other side and closes beyond again */
+  let retest = null;
+  for (let i = best.i + 1; i <= end && !retest; i++) {
+    const y = L.yAt(i), at = atrAtI(i), touch = up ? c[i].h >= y - 0.25 * at : c[i].l <= y + 0.25 * at;
+    if (touch && sgn * (c[i].c - y) > 0) retest = i;
+  }
+  const age = end - b0;
+  let status, text;
+  const parts = [(best.candleOk ? "strong candle" : "weak candle") + " (closed " + best.beyond.toFixed(2) + " ATR beyond, body " + Math.round(best.body * 100) + "%)",
+    (best.volOk ? "volume " + best.volX.toFixed(1) + "x average" : "volume only " + best.volX.toFixed(1) + "x (need " + TL_VOL + "x)")];
+  if (closedBack) { status = "FAILED"; text = "Price closed back " + (up ? "above" : "below") + " the line, a false break."; }
+  else if (best.candleOk && best.volOk && holds) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + ", price is holding beyond the line" + (retest != null ? ", and the retest held" : "") + "."; }
+  else if (best.candleOk && best.volOk) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + "."; }
+  else if (end === b0 && (best.candleOk || best.volOk)) { status = "WAITING"; text = "Just broke on the last closed candle: " + parts.join(", ") + ". Wait for the next candle to hold."; }
+  else { status = "UNCONFIRMED"; text = "Broke the line but " + parts.join(", ") + ". Not a reliable break yet."; }
+  return { i: b0, ci: best.i, dir: dirName, age, candleOk: best.candleOk, volOk: best.volOk, volX: best.volX, beyond: best.beyond, holds: holds && !closedBack, retest, status, text };
+}
+
+/* Order blocks that sit on a trendline: formed on it, or the line runs through them now. */
+function trendObsOf(A, id) {
+  const a = A[id]; if (!a) return [];
+  if (a._tlob) return a._tlob;
+  const c = a.candles, n = c.length, end = n - 2, res = [];
+  const lines = trendlinesOf(a), obs = allOrderBlocks(A).filter(o => o.tf === id && o.kind === "ob" && (o.valid || o.age <= 60));
+  lines.forEach(L => {
+    const want = L.up ? "bull" : "bear";
+    obs.forEach(o => {
+      if (o.bias !== want) return;
+      const atr = a.atr[Math.min(o.i, end)] || a.atr[end] || 1e-9, pad = 0.4 * atr, how = [];
+      if (o.i >= L.p1.i - 3) { const y = L.yAt(o.i); if (y >= o.lo - pad && y <= o.hi + pad) how.push("formed on the trendline"); }
+      if (L.brkI == null && L.nowP >= o.lo - pad && L.nowP <= o.hi + pad) how.push("trendline runs through it now");
+      if (!how.length) return;
+      res.push({ id, line: L, ob: o, how, valid: o.valid, confirmed: !!(o.now && o.now.confirmed), live: o.live, quality: o.quality });
+    });
+  });
+  res.sort((x, y) => (y.valid ? 1 : 0) - (x.valid ? 1 : 0) || (y.confirmed ? 1 : 0) - (x.confirmed ? 1 : 0) || y.ob.i - x.ob.i);
+  return (a._tlob = res);
+}
+function allTrend(A) {
+  if (A._tlall) return A._tlall;
+  const r = {}; ["4h", "1h", "15m", "5m"].forEach(id => { if (A[id]) r[id] = { lines: trendlinesOf(A[id]), obs: trendObsOf(A, id) }; });
+  return (A._tlall = r);
+}
+/* For the signal: is there a trendline play in the trade direction? Support line + order block (long), resistance line + order block (short),
+   or a confirmed break of a line in the trade direction. */
+function trendlineCheck(A, L) {
+  const want = L ? "up" : "down", items = [];
+  ["15m", "1h"].forEach(id => {
+    if (!A[id]) return;
+    const a = A[id], end = a.candles.length - 2;
+    trendlinesOf(a).forEach(Ln => {
+      if (Ln.brkI == null && Ln.up === L && Ln.near && Ln.status === "intact") {
+        const ob = trendObsOf(A, id).find(t => t.line === Ln && t.valid);
+        if (ob) items.push({ id, kind: "ob", text: tfl(id) + " " + (L ? "rising support" : "falling resistance") + " line (" + Ln.touches + " touches) meets a valid order block" + (ob.confirmed ? ", candle confirmed" : "") });
+        else if (Ln.touches >= 3) items.push({ id, kind: "line", text: tfl(id) + " " + (L ? "rising support" : "falling resistance") + " line, " + Ln.touches + " touches, price is at it" });
+      }
+      if (Ln.brk && Ln.brk.dir === want && Ln.brk.status === "CONFIRMED" && Ln.brk.age <= 12) items.push({ id, kind: "break", text: tfl(id) + " trendline break " + want + ", confirmed by candle and volume (" + Ln.brk.age + " candles ago)" });
+    });
+  });
+  const against = [];
+  ["15m", "1h"].forEach(id => {
+    if (!A[id]) return;
+    trendlinesOf(A[id]).forEach(Ln => { if (Ln.brk && Ln.brk.dir !== want && Ln.brk.status === "CONFIRMED" && Ln.brk.age <= 8) against.push(tfl(id) + " trendline break " + Ln.brk.dir + " confirmed"); });
+  });
+  const ok = items.length > 0 && against.length === 0;
+  return { ok, items, against, text: items.length ? items.map(x => x.text).join("; ") + (against.length ? ". AGAINST: " + against.join("; ") : "") : (against.length ? "AGAINST: " + against.join("; ") : "No trendline with an order block at price, and no confirmed trendline break in your direction") };
+}
+
+</script>
+<script>
+"use strict";
 /* Market data: Binance candles, CoinGecko market caps (coins above MIN_CAP only). */
 const CG = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false&page=";
 
@@ -1116,6 +1261,17 @@ async function jget(path) {
     try { const r = await fetch(host + path); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); } catch (e) { err = e; }
   }
   throw err;
+}
+/* One Binance kline row. q = quote volume, tq = taker-buy quote volume (aggressive buyers), used for money flow. */
+function kline(k) { return { t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], q: +k[7], tq: +k[10] }; }
+/* Older candles for the chart (before time `before`). */
+async function fetchKlinesBefore(symbol, interval, before, limit) {
+  const j = await jget("/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&endTime=" + before + "&limit=" + (limit || 500));
+  return Array.isArray(j) ? j.map(kline) : [];
+}
+function resetCaches(A) {
+  ["_obAll", "_kl", "_lc", "_tlall"].forEach(k => { delete A[k]; });
+  TFS.forEach(t => { if (A[t.id]) delete A[t.id]._tlob; });
 }
 async function fetchKlines(symbol, interval) {
   let lastErr;
@@ -1128,7 +1284,7 @@ async function fetchKlines(symbol, interval) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       const j = await r.json();
       if (!Array.isArray(j) || j.length < 120) throw new Error("Not enough candles");
-      return j.map(k => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] }));
+      return j.map(kline);
     } catch (e) { lastErr = e; }
   }
   throw lastErr;
@@ -1230,6 +1386,7 @@ async function loadSymbol() {
   }
   state.sig = buildSignal(state.A);
   state.sessStats = sessionStats(state.A["1h"].candles);
+  if (state.liveHook) liveStart(pair);
   return true;
 }
 
@@ -1309,10 +1466,10 @@ function scoreHeadline(text) {
   return { s, hits, label: s >= 1 ? "bullish" : s <= -1 ? "bearish" : "neutral" };
 }
 function newsMood() {
-  const since = Date.now() - 24 * 3600e3; let sum = 0, abs = 0, cnt = 0;
+  const since = Date.now() - newsHours() * 3600e3; let sum = 0, abs = 0, cnt = 0;
   ["us", "world", "crypto"].forEach(k => {
     const d = state.news[k]; if (!d || !d.items) return;
-    d.items.forEach(it => { if (it.t >= since) { sum += it.sent.s; abs += Math.abs(it.sent.s); cnt++; } });
+    d.items.forEach(it => { if (it.t >= since && it.rel) { const w = it.rel === "direct" ? 1.5 : 1; sum += it.sent.s * w; abs += Math.abs(it.sent.s) * w; cnt++; } });
   });
   if (!cnt) return null;
   return { mood: clamp(sum / (abs + 4), -1, 1), count: cnt, sum };
@@ -1328,7 +1485,7 @@ function macroBias(now) {
   };
   chk("cpi", 72, cpiScore, "CPI"); chk("jobs", 72, jobsScore, "US jobs"); chk("fed", 7 * 24, fedScore, "Fed decision");
   const m = newsMood();
-  if (m) { const s = m.mood >= 0.3 ? 1 : m.mood <= -0.3 ? -1 : 0; parts.push({ label: "Headlines", s, text: "Headline mood " + (m.mood >= 0 ? "+" : "") + m.mood.toFixed(2) + " from " + m.count + " stories in the last 24 hours." }); total += s; }
+  if (m) { const s = m.mood >= 0.3 ? 1 : m.mood <= -0.3 ? -1 : 0; parts.push({ label: "Headlines", s, text: "Headline mood " + (m.mood >= 0 ? "+" : "") + m.mood.toFixed(2) + " from " + m.count + " relevant stories in the last " + newsHours() + " hours." }); total += s; }
   const label = total >= 1 ? "bullish" : total <= -1 ? "bearish" : "neutral";
   const text = "Macro and news mood: " + label + (parts.length ? " (" + parts.map(p => p.label + " " + (p.s > 0 ? "+" : "") + p.s).join(", ") + ")" : " (no recent data)");
   return { total, label, parts, text };
@@ -1382,47 +1539,106 @@ function gdeltTime(s) {
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/.exec(String(s || ""));
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.now();
 }
+/* ---------- Which news matters for crypto ---------- */
+/* DIRECT = about crypto itself. INDIRECT = moves the whole market (rates, inflation, dollar, wars, oil, tariffs, regulation). Anything else is dropped. */
+const DIRECT_RE = /\b(bitcoin|btc|ethereum|ether|eth|crypto\w*|blockchain|stablecoins?|tether|usdt|usdc|binance|coinbase|kraken|bybit|okx|solana|xrp|ripple|dogecoin|cardano|bnb|altcoins?|defi|nfts?|web3|halving|satoshi|microstrategy|grayscale|digital assets?|memecoins?|spot etf|bitcoin etf|ether etf)\b/i;
+const INDIRECT_CATS = [
+  ["Fed and rates", /\b(fed|federal reserve|fomc|powell|interest rates?|rate (cuts?|hikes?|decisions?)|treasury yields?|bond yields?|10-year)\b/i],
+  ["Inflation and jobs", /\b(inflation|cpi|pce|jobs report|payrolls?|unemployment|jobless|gdp|recession)\b/i],
+  ["Dollar and stocks", /\b(dollar|dxy|stock market|stocks|nasdaq|s&p ?500|dow jones|wall street|sell-?off|risk[- ]off|nvidia|ai bubble|tech stocks)\b/i],
+  ["Trade and tariffs", /\b(tariffs?|trade (war|deal)|sanctions?|export controls?)\b/i],
+  ["War and geopolitics", /\b(war|ceasefire|missiles?|airstrikes?|invasion|nuclear|iran|israel|russia|ukraine|taiwan|north korea|hormuz)\b/i],
+  ["Oil and energy", /\b(oil|opec|crude|brent)\b/i],
+  ["Banks and liquidity", /\b(bank (failure|run|collapse)|banking crisis|liquidity|default|debt ceiling|stimulus|quantitative (easing|tightening))\b/i],
+  ["Central banks and China", /\b(china|pboc|yuan|ecb|bank of japan|boj|bank of england)\b/i],
+  ["Regulation and politics", /\b(sec|cftc)\b|\b(trump)\b.{0,60}\b(tariffs?|rates?|fed|crypto|bitcoin|sanctions?|trade|tax|china)\b|\b(congress|senate)\b.{0,50}\b(bill|crypto|stablecoin|ban|spending|shutdown|debt)\b|\bgovernment shutdown\b/i]
+];
+function newsRelevance(title) {
+  if (DIRECT_RE.test(title)) return { rel: "direct", cat: "Crypto" };
+  const cats = INDIRECT_CATS.filter(([, re]) => re.test(title)).map(x => x[0]);
+  return cats.length ? { rel: "indirect", cat: cats.slice(0, 2).join(" + ") } : null;
+}
+function newsHours() { const h = +store.get("newsHrs", "12"); return [3, 6, 12, 24].indexOf(h) > -1 ? h : 12; }
+function newsRelPref() { const r = store.get("newsRel", "all"); return r === "direct" || r === "indirect" ? r : "all"; }
+/* keep only fresh (24h max stored) and relevant stories */
+function cleanNews(items) {
+  const since = Date.now() - 24 * 3600e3, seen = new Set();
+  return items.filter(x => x.title && x.t >= since && x.t <= Date.now() + 600000).map(x => {
+    const r = x.rel && x.cat ? { rel: x.rel, cat: x.cat } : newsRelevance(x.title);
+    return r ? { ...x, ...r, sent: x.sent || scoreHeadline(x.title) } : null;
+  }).filter(Boolean).filter(x => { const k = x.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => b.t - a.t);
+}
 async function loadNews(kind, force) {
-  const key = "news_" + kind;
+  const key = "news2_" + kind;
   if (!force) {
-    try { const c = JSON.parse(store.get(key, "null")); if (c && Date.now() - c.at < 15 * 60000) { state.news[kind] = c; return; } } catch (e) { /* ignore */ }
+    try { const c = JSON.parse(store.get(key, "null")); if (c && Date.now() - c.at < 10 * 60000) { c.items = cleanNews(c.items || []); state.news[kind] = c; return; } } catch (e) { /* ignore */ }
   }
   try {
     let items;
     if (kind === "crypto") {
       const j = await getJson("https://min-api.cryptocompare.com/data/v2/news/?lang=EN");
-      items = (j.Data || []).slice(0, 40).map(x => ({ title: x.title, url: x.url, src: (x.source_info && x.source_info.name) || x.source || "", t: (x.published_on || 0) * 1000 }));
+      items = (j.Data || []).slice(0, 50).map(x => ({ title: x.title, url: x.url, src: (x.source_info && x.source_info.name) || x.source || "", t: (x.published_on || 0) * 1000 }));
     } else {
       const j = await getJson(GD + encodeURIComponent(kind === "us" ? Q_US : Q_WORLD));
       items = (j.articles || []).map(x => ({ title: x.title, url: x.url, src: x.domain || "", t: gdeltTime(x.seendate) }));
     }
-    const seen = new Set();
-    items = items.filter(x => x.title && !seen.has(x.title) && seen.add(x.title)).map(x => ({ ...x, sent: scoreHeadline(x.title) })).sort((a, b) => b.t - a.t);
+    items = cleanNews(items.map(x => ({ ...x, sent: scoreHeadline(x.title) })));
     state.news[kind] = { items, at: Date.now(), error: null };
     store.set(key, JSON.stringify(state.news[kind]));
   } catch (e) {
     const old = state.news[kind];
-    state.news[kind] = { items: old && old.items ? old.items : [], at: old ? old.at : null, error: e && e.message ? e.message : "network error" };
+    state.news[kind] = { items: old && old.items ? cleanNews(old.items) : [], at: old ? old.at : null, error: e && e.message ? e.message : "network error" };
   }
+  try { localStorage.removeItem("ctd_news_" + kind); } catch (e) { /* drop the old cache */ }
 }
 /* GDELT allows about one request every 5 seconds, so the two GDELT calls are spaced out. */
 async function loadAllNews(force) {
   await loadNews("crypto", force);
+  if (typeof renderNewsStrip === "function") renderNewsStrip();
   await loadNews("us", force);
   if (!(state.news.us && state.news.us.at && Date.now() - state.news.us.at < 3000)) await sleep(5500);
   await loadNews("world", force);
 }
+function newsFilterBar() {
+  const h = newsHours(), r = newsRelPref();
+  return '<div class="controls" style="margin:0 0 8px"><span class="sub" style="margin:0">Show last</span><div class="tabs">' + [3, 6, 12, 24].map(x => '<button data-nhrs="' + x + '" aria-pressed="' + (x === h) + '">' + x + 'h</button>').join("") + '</div>' +
+    '<div class="tabs">' + [["all", "All relevant"], ["direct", "Direct crypto"], ["indirect", "Indirect (macro)"]].map(([k, l]) => '<button data-nrel="' + k + '" aria-pressed="' + (k === r) + '">' + l + '</button>').join("") + '</div></div>';
+}
+function newsVisible(d) {
+  const since = Date.now() - newsHours() * 3600e3, r = newsRelPref();
+  return (d.items || []).filter(x => x.t >= since && (r === "all" || x.rel === r));
+}
+function newsRow(x) {
+  return '<li><span style="display:flex;flex-direction:column;gap:4px;align-items:flex-start"><span class="pill ' + (x.sent.label === "bullish" ? "up" : x.sent.label === "bearish" ? "down" : "mute") + '">' + x.sent.label.toUpperCase() + '</span>' +
+    '<span class="pill ' + (x.rel === "direct" ? "dir" : "ind") + '">' + (x.rel === "direct" ? "DIRECT" : "INDIRECT") + '</span></span>' +
+    '<span><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.title) + '</a><small>' + esc(x.src) + ' · ' + ago(x.t) + ' · ' + esc(x.cat) + (x.sent.hits.length ? ' · ' + esc(x.sent.hits.join(", ")) : '') + '</small></span></li>';
+}
+/* the most useful few stories across all feeds, newest and strongest first */
+function topNews(n, hrs) {
+  const since = Date.now() - (hrs || 6) * 3600e3, all = [];
+  ["crypto", "us", "world"].forEach(k => { const d = state.news[k]; if (d && d.items) d.items.forEach(x => { if (x.t >= since) all.push(x); }); });
+  const seen = new Set();
+  return all.map(x => ({ x, sc: (x.rel === "direct" ? 2 : 0) + Math.abs(x.sent.s) + (x.t > Date.now() - 3600e3 ? 1 : 0) })).sort((a, b) => b.sc - a.sc || b.x.t - a.x.t)
+    .filter(o => { const k = o.x.title.slice(0, 50); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, n).map(o => o.x);
+}
 function newsListHtml(kind) {
   const d = state.news[kind];
   if (!d) return '<div class="sub">Loading headlines...</div>';
-  const mood = (() => { let s = 0, a = 0; d.items.forEach(x => { s += x.sent.s; a += Math.abs(x.sent.s); }); return d.items.length ? clamp(s / (a + 4), -1, 1) : 0; })();
-  const head = d.items.length ? '<div class="status-row"><span class="sub" style="margin:0">' + d.items.length + ' headlines, last 24 hours. Mood ' + '<b class="' + (mood >= 0.3 ? "up-t" : mood <= -0.3 ? "down-t" : "mute-t") + '">' +
-    (mood >= 0.3 ? "bullish" : mood <= -0.3 ? "bearish" : "neutral") + ' (' + (mood >= 0 ? "+" : "") + mood.toFixed(2) + ')</b>' + (d.at ? ', updated ' + ago(d.at) : '') + '</span></div>' : '';
+  const vis = newsVisible(d);
+  const mood = (() => { let s = 0, a = 0; vis.forEach(x => { s += x.sent.s; a += Math.abs(x.sent.s); }); return vis.length ? clamp(s / (a + 4), -1, 1) : 0; })();
+  const head = '<div class="status-row"><span class="sub" style="margin:0">' + vis.length + ' relevant headlines in the last ' + newsHours() + ' hours. ' + (vis.length ? 'Mood <b class="' + (mood >= 0.3 ? "up-t" : mood <= -0.3 ? "down-t" : "mute-t") + '">' +
+    (mood >= 0.3 ? "bullish" : mood <= -0.3 ? "bearish" : "neutral") + ' (' + (mood >= 0 ? "+" : "") + mood.toFixed(2) + ')</b>' : '') + (d.at ? ', updated ' + ago(d.at) : '') + '</span></div>';
   const err = d.error ? '<div class="banner" style="margin-bottom:8px">Could not refresh this feed (' + esc(d.error) + '). ' + (d.items.length ? 'Showing the last saved headlines.' : 'Check your internet connection, or open the source site directly.') + '</div>' : '';
-  return err + head + (d.items.length ? '<ul class="news">' + d.items.slice(0, 30).map(x =>
-    '<li><span><span class="pill ' + (x.sent.label === "bullish" ? "up" : x.sent.label === "bearish" ? "down" : "mute") + '">' + x.sent.label.toUpperCase() + '</span></span>' +
-    '<span><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.title) + '</a><small>' + esc(x.src) + ' · ' + ago(x.t) + (x.sent.hits.length ? ' · ' + esc(x.sent.hits.join(", ")) : '') + '</small></span></li>').join("") + '</ul>' : '<div class="sub">No headlines.</div>');
+  return err + newsFilterBar() + head + (vis.length ? '<ul class="news">' + vis.slice(0, 30).map(newsRow).join("") + '</ul>' :
+    '<div class="sub">No relevant headlines in this window. Old and unrelated stories are hidden. Try a longer window.</div>') +
+    '<div class="note">DIRECT = about crypto itself. INDIRECT = moves all markets (Fed and rates, inflation, dollar and stocks, tariffs, war, oil, banks, regulation). Unrelated stories and anything older than 24 hours are removed.</div>';
 }
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest("[data-nhrs],[data-nrel]"); if (!b) return;
+  if (b.dataset.nhrs) store.set("newsHrs", b.dataset.nhrs); if (b.dataset.nrel) store.set("newsRel", b.dataset.nrel);
+  if (typeof refreshNews === "function") refreshNews(); if (typeof renderNewsStrip === "function") renderNewsStrip();
+});
 
 </script>
 <script>
@@ -1587,6 +1803,7 @@ function buildSignal(A) {
   const smcTxt = [].concat(evSup.slice(0, 2).map(e => e.name + " " + e.tf + " (" + e.age + " candles ago)"), liqSup ? ["Liquidity sweep then CHoCH on 15m"] : [], cpSup.slice(0, 2).map(p => p.name + " " + p.tf))
     .concat(evOpp.map(e => "AGAINST: " + e.name + " " + e.tf)).join("; ") || "No recent BOS, CHoCH, liquidity sweep or chart pattern in your direction";
 
+  const tlc = trendlineCheck(A, L);
   const checks = [
     { ok: htf * (L ? 1 : -1) >= 2, w: 2, label: "Bigger trend agrees", d: "4H " + dirWord(H4.struct.dir) + ", 1H " + dirWord(H1.struct.dir) + ", plus the daily chart in the background" },
     { ok: M15.struct.dir === want, w: 1, label: "15 min structure " + (L ? "HH + HL" : "LH + LL"), d: "15m is a " + dirWord(M15.struct.dir) + (M15.struct.shift ? " (structure just shifted)" : "") + ". Last swings: " + (M15.struct.seq.join(" ") || "none") },
@@ -1598,6 +1815,7 @@ function buildSignal(A) {
     { ok: nAgree >= 2 && nOpp === 0, w: 1, label: "Last 50 and 100 candles agree", d: ln.map(x => x[0] + ": " + x[1].label).join(", ") },
     { ok: lcSup.length > 0 && lcOpp.length === 0, w: 1, label: "4H / 1H level confirmed (15m / 5m candle)", d: lcSup.length ? lcSup.slice(0, 2).map(r => r.text).join(" ") : lcOpp.length ? "AGAINST: " + lcOpp[0].text : "No 4H or 1H support/resistance is being tested on the 15m / 5m chart right now" },
     { ok: smcOk, w: 1, label: "Structure and liquidity support (BOS, CHoCH, sweep, pattern)", d: smcTxt },
+    { ok: tlc.ok, w: 1, label: "Trendline + order block, or confirmed trendline break", d: tlc.text },
     { ok: macroOk, w: 1, label: "News and macro mood not against you", d: macro.bias.text }
   ];
   const max = checks.reduce((s, x) => s + x.w, 0), score = checks.reduce((s, x) => s + (x.ok ? x.w : 0), 0);
@@ -1647,7 +1865,7 @@ function buildSignal(A) {
     atr15, atr5, macro, near, srNote, rsi15, t5: M5.candles[end5].t, patBest, trg,
     pat: { supportP: trg.support, opposeP: trg.oppose },
     struct: { h4: H4.struct, h1: H1.struct, m15: M15.struct, m5: M5.struct }, sameBreaks, oppBreaks,
-    tfLabel, trigTfs, sigTf: zone ? zone.tf : null, lc: levelConfirm(A).filter(r => r.read !== "none").slice(0, 4), lcSup, lcOpp, obsNear, evSup, evOpp, liqM, cpSup, cpOpp, oppList
+    tlc, tfLabel, trigTfs, sigTf: zone ? zone.tf : null, lc: levelConfirm(A).filter(r => r.read !== "none").slice(0, 4), lcSup, lcOpp, obsNear, evSup, evOpp, liqM, cpSup, cpOpp, oppList
   };
 }
 
@@ -1859,15 +2077,105 @@ function checkSessionOpens() {
 </script>
 <script>
 "use strict";
+/* Live link to Binance. Candles and price update by themselves through Binance's public WebSocket (no keys).
+   If the WebSocket is blocked or keeps failing, the app falls back to asking Binance for the latest candles every few seconds. */
+const LIVE = { ws: null, pair: null, mode: "off", tries: 0, timer: null, poll: null, dirty: {}, lastMsg: 0, lastHook: 0, hookMs: 1000, retry: null };
+const WS_HOSTS = ["wss://stream.binance.com:9443/stream?streams=", "wss://data-stream.binance.vision/stream?streams="];
+
+function liveBadge() {
+  const el = $("liveBadge"); if (!el) return;
+  const m = LIVE.mode, cls = m === "live" ? "up" : m === "poll" ? "warn" : m === "connecting" ? "warn" : "mute";
+  const txt = m === "live" ? "● LIVE" : m === "poll" ? "● LIVE (refresh)" : m === "connecting" ? "connecting..." : state.demo ? "demo data" : "offline";
+  el.className = "pill " + cls; el.textContent = txt;
+  el.title = m === "live" ? "Connected to Binance live stream" : m === "poll" ? "WebSocket not available, refreshing every few seconds" : "";
+}
+/* merge one candle (from the stream or from polling) into state.A[tf]; analysis is redone on the timer */
+function liveApply(tfId, cd) {
+  const a = state.A[tfId]; if (!a) return;
+  const arr = a.candles, last = arr[arr.length - 1];
+  if (cd.t === last.t) arr[arr.length - 1] = { ...last, ...cd };
+  else if (cd.t > last.t) {
+    arr.push(cd);
+    if (arr.length > 1800) arr.splice(0, arr.length - 1800);
+    if (state.view && state.view.off > 0 && tfId === state.chartTf) state.view.off++;   /* keep the chart where the person scrolled to */
+  } else return;
+  LIVE.dirty[tfId] = true;
+}
+function liveFlush() {
+  const ids = Object.keys(LIVE.dirty); if (!ids.length) return false;
+  ids.forEach(id => { const a = state.A[id]; if (a) state.A[id] = analyze(a.candles, a.tf); });
+  LIVE.dirty = {}; resetCaches(state.A); return true;
+}
+function liveTick() {
+  if (document.hidden) return;
+  if (liveFlush()) {
+    const now = Date.now();
+    if (state.liveHook && now - LIVE.lastHook >= LIVE.hookMs) { LIVE.lastHook = now; try { state.liveHook(); } catch (e) { /* ignore */ } }
+  }
+  /* stream went silent: reconnect */
+  if (LIVE.mode === "live" && Date.now() - LIVE.lastMsg > 20000) liveReconnect();
+}
+function wsMsg(ev) {
+  let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+  const k = m && m.data && m.data.k; if (!k) return;
+  LIVE.lastMsg = Date.now();
+  liveApply(k.i, { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v, q: +k.q, tq: +k.Q });
+}
+function liveConnect() {
+  if (!LIVE.pair || state.demo || typeof WebSocket === "undefined") { liveFallback(); return; }
+  const streams = TFS.map(t => LIVE.pair.toLowerCase() + "@kline_" + t.id).join("/");
+  let ws; LIVE.mode = "connecting"; liveBadge();
+  try { ws = new WebSocket(WS_HOSTS[LIVE.tries % WS_HOSTS.length] + streams); } catch (e) { liveFallback(); return; }
+  LIVE.ws = ws; const pair = LIVE.pair; let opened = false;
+  ws.onopen = () => { opened = true; LIVE.mode = "live"; LIVE.tries = 0; LIVE.lastMsg = Date.now(); stopPoll(); liveBadge(); };
+  ws.onmessage = wsMsg;
+  ws.onerror = () => { /* onclose follows */ };
+  ws.onclose = () => {
+    if (LIVE.ws !== ws || LIVE.pair !== pair) return;
+    LIVE.ws = null; LIVE.tries++;
+    if (LIVE.tries >= 3 && !opened) { liveFallback(); return; }
+    LIVE.mode = "connecting"; liveBadge(); clearTimeout(LIVE.retry); LIVE.retry = setTimeout(liveConnect, Math.min(15000, 1500 * LIVE.tries));
+  };
+}
+function liveReconnect() { try { if (LIVE.ws) { const w = LIVE.ws; LIVE.ws = null; w.onclose = null; w.close(); } } catch (e) { /* ignore */ } LIVE.tries = 0; liveConnect(); }
+function stopPoll() { clearInterval(LIVE.poll); LIVE.poll = null; }
+function liveFallback() {
+  if (!LIVE.pair || state.demo) { LIVE.mode = "off"; liveBadge(); return; }
+  LIVE.mode = "poll"; liveBadge(); stopPoll();
+  const pair = LIVE.pair, run = async () => {
+    if (document.hidden || LIVE.pair !== pair) return;
+    for (const t of TFS) {
+      try { const j = await jget("/api/v3/klines?symbol=" + encodeURIComponent(pair) + "&interval=" + t.id + "&limit=2"); j.map(kline).forEach(c => liveApply(t.id, c)); } catch (e) { /* try next time */ }
+    }
+  };
+  run(); LIVE.poll = setInterval(run, 8000);
+}
+/* called after every successful candle load */
+function liveStart(pair) {
+  if (state.demo) { liveStop(); LIVE.pair = null; LIVE.mode = "off"; liveBadge(); return; }
+  if (LIVE.pair === pair && (LIVE.mode === "live" || LIVE.mode === "poll" || LIVE.mode === "connecting")) return;
+  liveStop(); LIVE.pair = pair; LIVE.tries = 0; liveConnect();
+  if (!LIVE.timer) LIVE.timer = setInterval(liveTick, 1000);
+}
+function liveStop() {
+  clearTimeout(LIVE.retry); stopPoll();
+  try { if (LIVE.ws) { const w = LIVE.ws; LIVE.ws = null; w.onclose = null; w.close(); } } catch (e) { /* ignore */ }
+  LIVE.mode = "off";
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && LIVE.pair && LIVE.mode !== "poll") liveReconnect(); });
+
+</script>
+<script>
+"use strict";
 /* Page frame shared by every page: title, menu, symbol box, banner, timers. Each page calls boot(). */
 const NAV = [["index.html", "Signals"], ["chart.html", "Chart"], ["analysis.html", "Analysis"], ["tradingview.html", "TradingView"], ["sessions.html", "Sessions"],
-  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
+  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["flow.html", "Money flow"], ["log.html", "Trade log"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
 
 function showBanner(msg) { const b = $("banner"); if (!b) return; b.hidden = !msg; b.textContent = msg; }
 function buildShell(cfg) {
   const nav = NAV.map(([href, label]) => '<a href="' + href + '"' + (href === cfg.file ? ' aria-current="page"' : '') + '>' + label + '</a>').join("");
   $("app").innerHTML = '<div class="wrap">' +
-    '<header class="top"><div><h1>Crypto Trend Desk</h1><div class="sub" style="margin:0">Scalping and intraday desk for coins above $50M market cap</div></div>' +
+    '<header class="top"><div><h1>Crypto Trend Desk <span id="liveBadge" class="pill mute" style="font-size:11px;vertical-align:middle"></span></h1><div class="sub" style="margin:0">Scalping and intraday desk for coins above $50M market cap</div></div>' +
     (cfg.symbolBox ? '<div class="controls"><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
       '<button id="go" class="primary">Analyze</button><label class="chk"><input type="checkbox" id="auto"> Refresh every minute</label></div>' : '') +
     '</header><nav class="nav" aria-label="Pages">' + nav + '</nav><div id="banner" class="banner" hidden></div><div id="capNote" class="sub" style="margin:0"></div>' +
@@ -1904,6 +2212,7 @@ async function boot(cfg) {
   state.symbol = store.get("symbol", "BTCUSDT"); state.chartTf = store.get("chartTf", "15m");
   if (!SHOWN.some(t => t.id === state.chartTf)) state.chartTf = "15m";
   if (cfg.symbolBox) $("sym").value = state.symbol;
+  if (cfg.live) state.liveHook = cfg.onLive || (() => {});
   SESSIONS.forEach(s => { state.prevAct[s.id] = sessionActive(s, Date.now()); });
   if (cfg.data) {
     $("main").innerHTML = '<div class="card sub">Loading coin list and candles...</div>';
@@ -1913,6 +2222,7 @@ async function boot(cfg) {
   }
   $("main").innerHTML = cfg.skeleton || "";
   if (cfg.init) cfg.init();
+  if (cfg.live) liveBadge(); else if ($("liveBadge")) $("liveBadge").hidden = true;
   cfg.render();
   startTick();
   if (cfg.after) cfg.after();
@@ -1954,13 +2264,15 @@ function renderExchange(id) {
 "use strict";
 /* Chart page: candles with EMAs, swing structure (HH, HL, LH, LL), support and resistance, breaks and retests,
    retracement levels, candle patterns, and shading for the last 50 and 100 candles. Drawn on a canvas. */
-const TOGGLES = [["tStruct", "HH / HL / LH / LL"], ["tSR", "Support and resistance"], ["tBrk", "Breaks and retests"], ["tFib", "Retracement"], ["tPat", "Candle patterns"], ["tWin", "Last 50 / 100 shading"], ["tHtf", "4H / 1H levels"], ["tOB", "Order blocks"], ["tBos", "BOS / CHoCH"], ["tLiq", "Liquidity"], ["tCp", "Chart patterns"]];
+const TOGGLES = [["tTl", "Trendlines + order blocks"], ["tStruct", "HH / HL / LH / LL"], ["tSR", "Support and resistance"], ["tBrk", "Breaks and retests"], ["tFib", "Retracement"], ["tPat", "Candle patterns"], ["tWin", "Last 50 / 100 shading"], ["tHtf", "4H / 1H levels"], ["tOB", "Order blocks"], ["tBos", "BOS / CHoCH"], ["tLiq", "Liquidity"], ["tCp", "Chart patterns"]];
 const CHART_SKELETON =
   '<section class="card"><div class="status-row"><h2 style="margin:0">Chart · <span id="chartSym"></span></h2><div id="chartInfo" class="sub" style="margin:0"></div></div>' +
   '<div class="status-row"><div class="tabs" id="tfTabs" role="group" aria-label="Chart timeframe"></div><div class="controls" id="toggles"></div></div>' +
-  '<canvas id="cv" height="440"></canvas><canvas id="cvr" height="90"></canvas>' +
+  '<div class="controls" id="viewBtns" style="margin:6px 0"><button id="vOlder">← Older</button><button id="vNewer">Newer →</button><button id="vIn">Zoom in +</button><button id="vOut">Zoom out −</button><button id="vLatest">Latest ⏭</button><button id="vMode" class="primary"></button></div>' +
+  '<div class="sub" style="margin:0 0 4px">Drag the chart left or right to move through time. Mouse wheel or two-finger pinch to zoom. Double-click or tap Latest to come back to now.</div>' +
+  '<div id="cvWrap" style="position:relative;touch-action:pan-y;cursor:grab;user-select:none"><canvas id="cv" height="440"></canvas><canvas id="cvx" style="position:absolute;left:0;top:0;pointer-events:none"></canvas></div><canvas id="cvr" height="90"></canvas>' +
   '<div class="legend"><span><i style="background:var(--ema20)"></i>EMA 20</span><span><i style="background:var(--ema50)"></i>EMA 50</span><span><i style="background:var(--ema200)"></i>EMA 200</span>' +
-  '<span class="up-t">HH / HL = higher highs and lows</span><span class="down-t">LH / LL = lower highs and lows</span><span style="color:var(--accent)">Gold = broken level, retracement</span><span>Bottom panel: RSI 14</span><span>Thick line = 4H level, dashed = 1H level</span><span class="up-t">Green box = bullish order block</span><span class="down-t">Red box = bearish order block</span><span style="color:#3b82f6">BOS</span><span style="color:#a855f7">CHoCH</span><span style="color:#d97706">Liquidity</span></div>' +
+  '<span class="up-t">HH / HL = higher highs and lows</span><span class="down-t">LH / LL = lower highs and lows</span><span style="color:var(--accent)">Gold = broken level, retracement</span><span>Bottom panel: RSI 14</span><span>Thick line = 4H level, dashed = 1H level</span><span class="up-t">Green box = bullish order block</span><span class="down-t">Red box = bearish order block</span><span style="color:#3b82f6">BOS</span><span style="color:#a855f7">CHoCH</span><span style="color:#d97706">Liquidity</span><span style="color:#eab308">Gold outline = order block sitting on a trendline</span></div>' +
   '<div class="chips" id="srList"></div>' +
   '<div class="note">Swing labels: a swing high higher than the one before is HH, lower is LH. A swing low higher than the one before is HL, lower is LL. Uptrend = HH + HL. Downtrend = LH + LL. BRK = price closed beyond a support or resistance zone. RT = price came back to test it. Dashed support and resistance lines are zones price turned from at least twice. The retracement shading is the 38.2% to 61.8% pullback zone of the latest leg. Arrows mark strong candle patterns. Order blocks: the last opposite candle before a BOS or CHoCH, valid until price closes through it or it is tested twice. BOS = a close beyond the last swing in the trend direction, CHoCH = a close beyond the last swing against the trend. Full tables are on the <a href="analysis.html">Analysis</a> page.</div></section>';
 
@@ -1978,16 +2290,22 @@ function tagText(ctx, txt, px, py, col, bg, align) {
 function chartTabs() {
   const el = $("tfTabs");
   el.innerHTML = SHOWN.map(t => '<button data-tf="' + t.id + '" aria-pressed="' + (t.id === state.chartTf) + '">' + t.name + '</button>').join("");
-  el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.chartTf = b.dataset.tf; store.set("chartTf", state.chartTf); chartTabs(); drawChart(); }));
+  el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.chartTf = b.dataset.tf; store.set("chartTf", state.chartTf); state.view = { count: state.view ? state.view.count : 130, off: 0 }; chartTabs(); drawChart(); }));
 }
 function setupToggles() {
   $("toggles").innerHTML = TOGGLES.map(([id, label]) => '<label class="chk"><input type="checkbox" id="' + id + '"> ' + label + '</label>').join("");
-  TOGGLES.forEach(([id]) => { $(id).checked = store.get(id, "1") === "1"; $(id).addEventListener("change", () => { store.set(id, $(id).checked ? "1" : "0"); drawChart(); }); });
+  TOGGLES.forEach(([id]) => { $(id).checked = store.get(id, "1") === "1"; $(id).addEventListener("change", () => { store.set(id, $(id).checked ? "1" : "0"); if (store.get("tlOnly", "1") === "1" && id !== "tTl") { store.set("tlOnly", "0"); setModeBtn(); } drawChart(); }); });
 }
 function drawChart() {
   const a = state.A[state.chartTf]; if (!a || !$("cv")) return;
-  const T = id => $(id) && $(id).checked;
-  const n = a.candles.length, N = Math.min(n, 130), s0 = n - N, cs = a.candles.slice(s0), end = n - 2;
+  const tlOnly = store.get("tlOnly", "1") === "1";
+  const T = id => $(id) && $(id).checked && (!tlOnly || id === "tTl");
+  const V = state.view || (state.view = { count: 130, off: 0 });
+  const n = a.candles.length, end = n - 2, N = clamp(Math.round(V.count), 20, 400);
+  V.count = N; V.off = clamp(V.off, -Math.floor(N * 0.4), Math.max(0, n - 12));
+  const r = n - V.off, sv = r - N, s0 = Math.max(0, sv), cs = a.candles.slice(s0, Math.min(r, n));
+  if (!cs.length) return;
+  if (sv < 25) loadOlder(state.chartTf);
   const cUp = css("--up"), cDown = css("--down"), cGrid = css("--line"), cTxt = css("--muted"), cAcc = css("--accent"), cSurf = css("--surface"), cFg = css("--fg"), mono = css("--font-mono");
   const P = setupCanvas($("cv"), 440), ctx = P.ctx;
   const padR = 74, padT = 16, padB = 22, plotW = P.w - padR, plotH = P.h - padT - padB, volH = plotH * 0.14, priceH = plotH - volH - 6;
@@ -1997,13 +2315,13 @@ function drawChart() {
     [a.ema20[s0 + j], a.ema50[s0 + j]].forEach(v => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } });
   });
   const pad = (hi - lo) * 0.07; lo -= pad; hi += pad;
-  const y = v => padT + (hi - v) / (hi - lo) * priceH, x = j => (j + 0.5) / N * plotW, xi = i => x(i - s0), cw = Math.max(1, plotW / N * 0.66), colW = plotW / N;
+  const y = v => padT + (hi - v) / (hi - lo) * priceH, x = j => (j + s0 - sv + 0.5) / N * plotW, xi = i => (i - sv + 0.5) / N * plotW, cw = Math.max(1, plotW / N * 0.66), colW = plotW / N;
   ctx.clearRect(0, 0, P.w, P.h); ctx.font = "11px " + mono;
 
   /* last 100 and last 50 candle shading */
   if (T("tWin")) {
     [[100, 0.05, "last 100"], [50, 0.07, "last 50"]].forEach(([w, al, lab], q) => {
-      const j0 = Math.max(0, N - 1 - w), x0 = x(j0) - colW / 2;
+      const x0 = Math.max(0, xi(n - 1 - w) - colW / 2); if (x0 >= plotW) return;
       ctx.globalAlpha = al; ctx.fillStyle = cFg; ctx.fillRect(x0, padT, plotW - x0, priceH); ctx.globalAlpha = 1;
       ctx.fillStyle = cTxt; ctx.textAlign = "left"; ctx.fillText(lab, x0 + 4, padT + 10 + q * 12);
     });
@@ -2014,6 +2332,7 @@ function drawChart() {
     ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(plotW, yy); ctx.stroke();
     ctx.textAlign = "left"; ctx.fillText(fp(v), plotW + 6, yy + 4);
   }
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, plotW, P.h); ctx.clip();
   const maxV = Math.max(...cs.map(k => k.v)) || 1;
   cs.forEach((k, j) => {
     const col = k.c >= k.o ? cUp : cDown; ctx.fillStyle = col; ctx.strokeStyle = col;
@@ -2073,6 +2392,33 @@ function drawChart() {
       if (!usedY.some(u => Math.abs(u - yy) < 14)) { usedY.push(yy); tagText(ctx, tfl(Lv.tf) + " " + Lv.side + " " + fp(Lv.p) + " x" + Lv.n, plotW * 0.42, yy - 3, col, cSurf, "left"); }
     });
     ctx.font = "11px " + mono;
+  }
+  /* trendlines, order blocks on them, and break confirmation by candle + volume */
+  if (T("tTl")) {
+    const edge = sv + N + 1; ctx.save(); ctx.beginPath(); ctx.rect(0, padT, plotW, priceH); ctx.clip(); ctx.font = "bold 10px " + mono;
+    const GOLD = "#eab308";
+    trendObsOf(state.A, state.chartTf).forEach(t => {
+      const o = t.ob, x0 = Math.max(0, xi(o.i) - colW / 2), y1 = y(o.hi), y2 = y(o.lo), hh = Math.max(4, y2 - y1), col = o.bias === "bull" ? cUp : cDown;
+      ctx.globalAlpha = o.valid ? 0.2 : 0.07; ctx.fillStyle = col; ctx.fillRect(x0, y1, plotW - x0, hh); ctx.globalAlpha = 1;
+      ctx.strokeStyle = GOLD; ctx.lineWidth = o.valid ? 2.4 : 1.2; ctx.setLineDash(o.valid ? [] : [4, 3]); ctx.strokeRect(x0 + 0.5, y1, plotW - x0 - 1, hh); ctx.setLineDash([]);
+      tagText(ctx, "OB" + (o.bias === "bull" ? "▲" : "▼") + " on trendline · " + (o.valid ? (t.confirmed ? "VALID ✓ candle confirmed" : "valid, " + (o.now.inZone ? "in zone" : "not tested now")) : "broken") + " · " + o.quality, x0 + 4, y1 - 3, GOLD, cSurf, "left");
+    });
+    trendlinesOf(a).forEach(Ln => {
+      const col = Ln.up ? cUp : cDown, broke = Ln.brkI != null, iB = broke ? Ln.brkI : edge;
+      ctx.strokeStyle = col; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(xi(Ln.p1.i), y(Ln.p1.p)); ctx.lineTo(xi(iB), y(Ln.yAt(iB))); ctx.stroke();
+      if (broke) { ctx.lineWidth = 1.4; ctx.globalAlpha = 0.65; ctx.setLineDash([7, 5]); ctx.beginPath(); ctx.moveTo(xi(iB), y(Ln.yAt(iB))); ctx.lineTo(xi(edge), y(Ln.yAt(edge))); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
+      Ln.ts.concat([Ln.p1.i, Ln.p2.i]).forEach(i => { ctx.fillStyle = cSurf; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(xi(i), y(Ln.yAt(i)), 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+      const ie = Math.min(iB, sv + N - 1), ly = y(Ln.yAt(ie)) + (Ln.up ? 16 : -7);
+      tagText(ctx, Ln.name + " · " + Ln.touches + " touches" + (broke ? "" : Ln.near ? " · price at line" : ""), Math.min(plotW - 4, Math.max(xi(ie) , 150)), ly, col, cSurf, "right");
+      if (broke) {
+        const b = Ln.brk, bx = xi(b.ci), by = y(b.ci >= 0 ? a.candles[b.ci].c : Ln.yAt(b.ci)), bc = b.status === "CONFIRMED" ? GOLD : b.status === "FAILED" ? cTxt : cAcc;
+        ctx.fillStyle = bc; ctx.beginPath(); ctx.moveTo(bx, by - 7); ctx.lineTo(bx + 7, by); ctx.lineTo(bx, by + 7); ctx.lineTo(bx - 7, by); ctx.fill();
+        const lab = b.status === "CONFIRMED" ? "BREAK CONFIRMED ✓ candle + volume " + b.volX.toFixed(1) + "x" : b.status === "FAILED" ? "FALSE BREAK" : b.status === "WAITING" ? "BROKE, wait next candle" : "BREAK ? " + (b.candleOk ? "" : "weak candle ") + (b.volOk ? "" : "low volume " + b.volX.toFixed(1) + "x");
+        tagText(ctx, lab, bx + 10, by + (b.dir === "up" ? -10 : 22), bc, cSurf, "left");
+        if (b.retest != null) { ctx.strokeStyle = GOLD; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(xi(b.retest), y(Ln.yAt(b.retest)), 6, 0, Math.PI * 2); ctx.stroke(); tagText(ctx, "RETEST", xi(b.retest) + 8, y(Ln.yAt(b.retest)) + (b.dir === "up" ? 16 : -8), GOLD, cSurf, "left"); }
+      }
+    });
+    ctx.restore(); ctx.font = "11px " + mono;
   }
   /* order blocks: green = bullish, red = bearish. Solid = still valid, faint dashed = broken or used up */
   if (T("tOB")) {
@@ -2172,7 +2518,7 @@ function drawChart() {
   if (T("tPat")) {
     const lastX = { bull: -99, bear: -99 };
     ctx.font = "10px " + mono; ctx.textAlign = "center";
-    for (let j = 0; j < N; j++) {
+    for (let j = 0; j < cs.length; j++) {
       const idx = s0 + j; if (idx > end) break;
       const best = detectPatterns(a, idx).filter(p => p.str >= 2).sort((p, q) => q.str - p.str)[0];
       if (!best) continue;
@@ -2185,14 +2531,17 @@ function drawChart() {
     ctx.font = "11px " + mono;
   }
   /* last price and date labels */
-  const price = cs[cs.length - 1].c;
+  ctx.restore();
+  const price = a.candles[n - 1].c;
   ctx.strokeStyle = cTxt; ctx.setLineDash([3, 3]); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, y(price)); ctx.lineTo(plotW, y(price)); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = cFg; ctx.textAlign = "left"; ctx.fillText(fp(price), plotW + 6, y(price) - 4);
   ctx.fillStyle = cTxt; ctx.textAlign = "center";
   [0.1, 0.35, 0.6, 0.85].forEach(f => {
-    const j = Math.floor(f * N), d = new Date(cs[j].t);
+    const j = Math.min(cs.length - 1, Math.floor(f * cs.length)), d = new Date(cs[j].t);
     ctx.fillText(d.toLocaleString(undefined, state.chartTf === "1d" ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }), x(j), P.h - 6);
   });
+  state.vg = { sv, N, plotW, lo, hi, padT, priceH, n, a, y0: padT, W: P.w, H: P.h };
+  drawCross();
   /* RSI panel */
   const R = setupCanvas($("cvr"), 90), rc = R.ctx, rh = R.h - 12, ry = v => 6 + (100 - v) / 100 * rh;
   rc.clearRect(0, 0, R.w, R.h); rc.font = "11px " + mono; rc.lineWidth = 1;
@@ -2215,14 +2564,85 @@ function drawChart() {
   const klv = keyLevels(state.A).filter(z => z.tf !== state.chartTf);
   klv.filter(z => z.side === "R").sort((p, q) => q.p - p.p).forEach(z => chips.unshift('<span class="chip r">' + tfl(z.tf) + ' R ' + fp(z.p) + ' x' + z.n + '</span>'));
   klv.filter(z => z.side === "S").sort((p, q) => q.p - p.p).forEach(z => chips.push('<span class="chip s">' + tfl(z.tf) + ' S ' + fp(z.p) + ' x' + z.n + '</span>'));
+  trendlinesOf(a).forEach(Ln => chips.push('<span class="chip ' + (Ln.up ? "u" : "d") + '" title="' + esc(Ln.brk ? Ln.brk.text : "Line intact") + '">' + Ln.name + ' ' + fp(Ln.nowP) + ' x' + Ln.touches + (Ln.brk ? ' · break ' + Ln.brk.status.toLowerCase() : Ln.near ? ' · price at line' : '') + '</span>'));
+  trendObsOf(state.A, state.chartTf).slice(0, 3).forEach(t => chips.push('<span class="chip n">OB on trendline ' + fp(t.ob.lo) + '-' + fp(t.ob.hi) + ' · ' + esc(t.ob.live) + '</span>'));
   chartPatternsOf(a).slice(0, 3).forEach(p => chips.push('<span class="chip ' + (p.bias === "bull" ? "u" : "d") + '">' + esc(p.name) + ' ' + p.status + '</span>'));
   $("srList").innerHTML = chips.join("");
 }
-function renderChartPage() { $("chartSym").textContent = state.symbol + (state.demo ? " (demo data)" : ""); chartTabs(); drawChart(); }
+function renderChartPage() { $("chartSym").textContent = state.symbol + (state.demo ? " (demo data)" : ""); chartTabs(); setModeBtn(); drawChart(); }
+function setModeBtn() { const b = $("vMode"); if (b) b.textContent = store.get("tlOnly", "1") === "1" ? "Trendline view (tap for all overlays)" : "All overlays (tap for trendline view)"; }
+let rafT = 0; function redraw() { if (rafT) return; rafT = requestAnimationFrame(() => { rafT = 0; drawChart(); }); }
+
+/* ---------- Move and zoom like an exchange chart ---------- */
+async function loadOlder(id) {
+  const a = state.A[id]; if (!a || state.demo || state.olderBusy) return;
+  const key = state.symbol + id; state.noMore = state.noMore || {};
+  if (state.noMore[key] || a.candles.length >= 1500) return;
+  state.olderBusy = true;
+  try {
+    const more = await fetchKlinesBefore(state.symbol, id, a.candles[0].t - 1, 500);
+    if (more.length < 500) state.noMore[key] = true;
+    if (more.length && state.A[id] === a) { state.A[id] = analyze(more.concat(a.candles), a.tf); resetCaches(state.A); }
+  } catch (e) { state.noMore[key] = true; }
+  state.olderBusy = false; redraw();
+}
+function zoomAt(frac, newN) {
+  const V = state.view, vg = state.vg; if (!vg) return;
+  newN = clamp(Math.round(newN), 20, 400);
+  const idx = vg.sv + frac * vg.N, sv2 = idx - frac * newN;
+  V.count = newN; V.off = Math.round(vg.n - (sv2 + newN)); redraw();
+}
+function drawCross() {
+  const cx = $("cvx"), vg = state.vg, c = state.cross; if (!cx || !vg) return;
+  const dpr = window.devicePixelRatio || 1; cx.width = Math.floor(vg.W * dpr); cx.height = Math.floor(vg.H * dpr); cx.style.width = vg.W + "px"; cx.style.height = vg.H + "px";
+  const ctx = cx.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, vg.W, vg.H);
+  if (!c || c.x < 0 || c.x > vg.plotW || c.y < vg.padT || c.y > vg.padT + vg.priceH) return;
+  const mono = css("--font-mono"), fg = css("--fg"), surf = css("--surface"), txt = css("--muted"); ctx.font = "11px " + mono;
+  const idx = Math.floor(vg.sv + c.x / vg.plotW * vg.N), price = vg.hi - (c.y - vg.padT) / vg.priceH * (vg.hi - vg.lo), k = vg.a.candles[idx];
+  ctx.strokeStyle = txt; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(c.x, vg.padT); ctx.lineTo(c.x, vg.padT + vg.priceH); ctx.moveTo(0, c.y); ctx.lineTo(vg.plotW, c.y); ctx.stroke(); ctx.setLineDash([]);
+  tagText(ctx, fp(price), vg.W - 2, c.y + 4, surf, fg, "right");
+  if (k) {
+    tagText(ctx, new Date(k.t).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }), Math.min(vg.plotW - 4, Math.max(60, c.x)), vg.H - 6, fg, surf, "center");
+    const ch = 100 * (k.c / k.o - 1);
+    tagText(ctx, "O " + fp(k.o) + "  H " + fp(k.h) + "  L " + fp(k.l) + "  C " + fp(k.c) + "  " + (ch >= 0 ? "+" : "") + ch.toFixed(2) + "%  Vol " + (k.v >= 1e6 ? (k.v / 1e6).toFixed(2) + "M" : k.v >= 1e3 ? (k.v / 1e3).toFixed(1) + "K" : k.v.toFixed(1)), 6, vg.padT + 12, fg, surf, "left");
+  }
+}
+function setupMove() {
+  const w = $("cvWrap"), V = () => state.view || (state.view = { count: 130, off: 0 }), ptrs = new Map(); let drag = null, pinch = null;
+  const rel = e => { const b = w.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+  w.addEventListener("pointerdown", e => {
+    try { w.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 1) { drag = { x: e.clientX, off: V().off }; w.style.cursor = "grabbing"; }
+    else if (ptrs.size === 2) { const [p, q] = [...ptrs.values()]; pinch = { d: Math.hypot(p.x - q.x, p.y - q.y) || 1, n: V().count }; drag = null; }
+  });
+  w.addEventListener("pointermove", e => {
+    const vg = state.vg; if (!vg) return;
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && ptrs.size === 2) { const [p, q] = [...ptrs.values()], d = Math.hypot(p.x - q.x, p.y - q.y) || 1, b = w.getBoundingClientRect(); zoomAt(clamp(((p.x + q.x) / 2 - b.left) / vg.plotW, 0, 1), pinch.n * pinch.d / d); return; }
+    if (drag && ptrs.size === 1) { V().off = drag.off + Math.round((e.clientX - drag.x) / (vg.plotW / vg.N)); redraw(); }
+    if (e.pointerType === "mouse" || drag) { state.cross = rel(e); drawCross(); }
+  });
+  const up = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (ptrs.size === 1) { const [p] = [...ptrs.values()]; drag = { x: p.x, off: V().off }; } if (!ptrs.size) { drag = null; w.style.cursor = "grab"; if (e.pointerType !== "mouse") { state.cross = null; drawCross(); } } };
+  w.addEventListener("pointerup", up); w.addEventListener("pointercancel", up);
+  w.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { state.cross = null; drawCross(); } });
+  w.addEventListener("wheel", e => {
+    const vg = state.vg; if (!vg) return; e.preventDefault();
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey) { V().off += Math.round(-(e.deltaX || e.deltaY) / (vg.plotW / vg.N) * 1.5); redraw(); }
+    else zoomAt(clamp(rel(e).x / vg.plotW, 0, 1), vg.N * Math.exp(e.deltaY * 0.0015));
+  }, { passive: false });
+  w.addEventListener("dblclick", () => { state.view = { count: 130, off: 0 }; redraw(); });
+  const step = f => () => { const v = V(); v.off += Math.round(f * v.count); redraw(); };
+  $("vOlder").addEventListener("click", step(0.5)); $("vNewer").addEventListener("click", step(-0.5));
+  $("vIn").addEventListener("click", () => zoomAt(0.5, V().count * 0.7)); $("vOut").addEventListener("click", () => zoomAt(0.5, V().count / 0.7));
+  $("vLatest").addEventListener("click", () => { V().off = 0; redraw(); });
+  $("vMode").addEventListener("click", () => { store.set("tlOnly", store.get("tlOnly", "1") === "1" ? "0" : "1"); setModeBtn(); redraw(); });
+}
 let rzT; window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(drawChart, 120); });
 try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(drawChart, 50)); } catch (e) { /* ignore */ }
 
-boot({ file: "chart.html", title: "Chart", data: true, symbolBox: true, skeleton: CHART_SKELETON, render: renderChartPage, init: setupToggles });
+boot({ file: "chart.html", title: "Chart", data: true, symbolBox: true, skeleton: CHART_SKELETON, render: renderChartPage, init: () => { setupToggles(); setupMove(); }, live: true, onLive: () => redraw() });
 
 </script>
 </body>

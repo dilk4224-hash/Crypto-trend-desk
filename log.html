@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade log | Crypto Trend Desk</title>
+<style>
+/* Crypto Trend Desk: shared styles for every page. Layout: sticky page menu, then one or more cards. */
+:root {
+  --bg: #f3f5f4;
+  --surface: #ffffff;
+  --surface-2: #eaeeec;
+  --fg: #16201d;
+  --muted: #5d6b66;
+  --line: #d5dcd9;
+  --accent: #b7791f;
+  --up: #12805c;
+  --down: #c43d3d;
+  --warn: #b7791f;
+  --ema20: #b7791f;
+  --ema50: #2b6cb0;
+  --ema200: #7c4dbd;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1513; --surface: #151e1b; --surface-2: #1c2723; --fg: #e4ece8; --muted: #8fa19a; --line: #27342f;
+    --accent: #e0a63a; --up: #2fc08b; --down: #ef6b6b; --warn: #e0a63a;
+    --ema20: #e0a63a; --ema50: #5aa2f0; --ema200: #b48cf0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1513; --surface: #151e1b; --surface-2: #1c2723; --fg: #e4ece8; --muted: #8fa19a; --line: #27342f;
+  --accent: #e0a63a; --up: #2fc08b; --down: #ef6b6b; --warn: #e0a63a;
+  --ema20: #e0a63a; --ema50: #5aa2f0; --ema200: #b48cf0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-block: 16px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 20px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 12px; margin: 0 0 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+h3 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+a { color: var(--ema50); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+header.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+input, select, button {
+  font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 10px; min-width: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, tr:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button { cursor: pointer; font-weight: 500; }
+button:disabled { opacity: 0.6; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="dark"] button.primary { color: #1a1305; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) button.primary { color: #1a1305; } }
+label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+label.chk input { padding: 0; }
+.nav {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-inline: -2px; padding-inline: 2px;
+}
+.nav a { padding: 9px 12px; white-space: nowrap; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; font-weight: 500; }
+.nav a:hover { color: var(--fg); }
+.nav a[aria-current="page"] { color: var(--fg); border-bottom-color: var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.two { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.banner { padding: 10px 14px; border-radius: 6px; border: 1px solid var(--warn); color: var(--warn); background: var(--surface); font-size: 13px; }
+.status-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.price { font-size: 26px; font-weight: 600; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; border: 1px solid currentColor; white-space: nowrap; }
+.pill.up { color: var(--up); } .pill.down { color: var(--down); } .pill.warn { color: var(--warn); } .pill.mute { color: var(--muted); }
+.verdict { font-size: 22px; font-weight: 600; margin: 8px 0 2px; letter-spacing: -0.01em; }
+.verdict.up { color: var(--up); } .verdict.down { color: var(--down); } .verdict.warn { color: var(--warn); } .verdict.mute { color: var(--muted); }
+.sub { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 0; }
+.lvl { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
+.lvl small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.lvl b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 500; }
+.lvl.sl b, .lvl.res b { color: var(--down); } .lvl.tp b, .lvl.sup b { color: var(--up); }
+ul.checks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+ul.checks li { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: baseline; }
+ul.checks .mk { font-family: var(--font-mono); font-weight: 600; }
+ul.checks .ok .mk { color: var(--up); } ul.checks .no .mk { color: var(--down); }
+ul.checks .w { color: var(--muted); font-size: 12px; font-family: var(--font-mono); }
+ul.checks .d { color: var(--muted); font-size: 12px; display: block; }
+.score { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin: 6px 0 14px; }
+.score i { display: block; height: 100%; background: var(--accent); }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs button { padding: 5px 12px; font-size: 13px; }
+.tabs button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle; }
+canvas { width: 100%; display: block; }
+.tbl { overflow-x: auto; }
+.tbl.tall { max-height: 460px; overflow-y: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 600px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+td.wrapc { white-space: normal; min-width: 260px; color: var(--muted); font-size: 13px; }
+td.dots { letter-spacing: 0.1em; color: var(--accent); }
+tr[data-pair] { cursor: pointer; }
+tr[data-pair]:hover td { background: var(--surface-2); }
+tr.cur td { background: var(--surface-2); }
+.up-t { color: var(--up); } .down-t { color: var(--down); } .mute-t { color: var(--muted); } .warn-t { color: var(--warn); }
+.field { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.field label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.field input, .field select { width: 100%; }
+.kv { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+.kv:last-child { border-bottom: 0; }
+.kv span:first-child { color: var(--muted); }
+.cd { font-family: var(--font-mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+footer { color: var(--muted); font-size: 12px; max-width: 80ch; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { font-family: var(--font-mono); font-size: 12px; padding: 3px 8px; border-radius: 4px; background: var(--surface-2); }
+.chip.r { color: var(--down); } .chip.s { color: var(--up); } .chip.u { color: var(--up); } .chip.d { color: var(--down); } .chip.n { color: var(--muted); }
+.tl-row { display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: center; margin-bottom: 6px; }
+.tl-name { font-size: 13px; font-weight: 500; }
+.tl-bar { position: relative; display: grid; grid-template-columns: repeat(96, 1fr); height: 14px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.tl-bar i.on { background: var(--c); }
+.tl-bar .now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); }
+.tl-axis { display: grid; grid-template-columns: 112px 1fr; gap: 10px; font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.tl-axis div { display: flex; justify-content: space-between; }
+details summary { cursor: pointer; font-weight: 500; }
+.alog { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.alog li { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.alog li:last-child { border-bottom: 0; }
+.alog small { color: var(--muted); display: block; white-space: pre-line; }
+.sess-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0; }
+ul.news { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+ul.news li { display: grid; grid-template-columns: 78px 1fr; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+ul.news li:last-child { border-bottom: 0; }
+ul.news a { color: var(--fg); text-decoration: none; font-weight: 500; }
+ul.news a:hover { text-decoration: underline; }
+ul.news small { display: block; color: var(--muted); font-size: 12px; }
+.rules { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+.rules li { margin-bottom: 3px; }
+.tvbox { width: 100%; height: min(78vh, 720px); min-height: 420px; border-radius: 6px; overflow: hidden; background: var(--surface-2); }
+.codebox { background: var(--surface-2); border-radius: 6px; padding: 10px 12px; font-family: var(--font-mono); font-size: 12px; max-height: 280px; overflow: auto; white-space: pre; }
+.meter { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 8px 0; }
+.meter .lvl b { font-size: 13px; }
+@media (max-width: 520px) { .price { font-size: 22px; } }
+
+.pill.dir { background: var(--fg); color: var(--bg); } .pill.ind { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+"use strict";
+/* Shared settings, storage and small helpers. Loaded first on every page. */
+const MIN_CAP = 50e6; // only coins with market cap above this are analysed
+/* Weekly is removed. Daily (show:false) is never displayed but is always used as background bias. */
+const TFS = [
+  { id: "5m", name: "5 Min", ms: 300000, k: 3, show: true, tv: "5" },
+  { id: "15m", name: "15 Min", ms: 900000, k: 3, show: true, tv: "15" },
+  { id: "1h", name: "1 Hour", ms: 3600000, k: 4, show: true, tv: "60" },
+  { id: "4h", name: "4 Hour", ms: 14400000, k: 4, show: true, tv: "240" },
+  { id: "1d", name: "Daily", ms: 86400000, k: 5, show: false, tv: "D" }
+];
+const SHOWN = TFS.filter(t => t.show);
+const WINDOWS = [50, 100]; // "last N candles" analysis windows
+const HOSTS = ["https://api.binance.com", "https://data-api.binance.vision"];
+const STABLE = new Set(["USDT","USDC","FDUSD","TUSD","DAI","USDE","PYUSD","USDP","BUSD","USD1","USDD","GUSD","EURC","EUR","AEUR","XUSD","RLUSD","BFUSD","USDS","WBTC","WBETH","STETH","WSTETH","WEETH","BETH","CBBTC"]);
+const FALLBACK = ["BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK","DOT","LTC","BCH","NEAR","UNI","ATOM","ETC","XLM","FIL","APT","ARB","OP","INJ","SUI","AAVE","HBAR","ICP","POL","TON","ALGO"];
+/* Sessions are defined in each city's own clock, so daylight saving is handled by the browser. */
+const SESSIONS = [
+  { id: "asia", name: "Asia (Tokyo)", tz: "Asia/Tokyo", from: 9, to: 18, color: "--ema50" },
+  { id: "london", name: "London (UK)", tz: "Europe/London", from: 8, to: 17, color: "--ema20" },
+  { id: "ny", name: "New York (US)", tz: "America/New_York", from: 8, to: 17, color: "--ema200" }
+];
+
+const state = {
+  symbol: "BTCUSDT", chartTf: "15m", A: {}, demo: false, sig: null,
+  uni: { list: [], map: {}, verified: false }, scan: { rows: [], at: null, running: false },
+  alerts: [], sessStats: [], prevAct: {}, news: { us: null, world: null, crypto: null }
+};
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("ctd_" + k); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("ctd_" + k, v); } catch (e) { /* ignore */ } }
+};
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const coinOf = pair => pair.replace(/USDT$/, "");
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+function fp(x) {
+  if (x == null || !isFinite(x)) return "n/a";
+  const a = Math.abs(x), d = a >= 1000 ? 2 : a >= 1 ? 3 : a >= 0.1 ? 4 : 6;
+  return x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+const fmtCap = x => x == null ? "n/a" : x >= 1e12 ? "$" + (x / 1e12).toFixed(2) + "T" : x >= 1e9 ? "$" + (x / 1e9).toFixed(1) + "B" : "$" + Math.round(x / 1e6) + "M";
+const pc = (v, d) => v == null || !isFinite(v) ? "n/a" : '<span class="' + (v >= 0 ? "up-t" : "down-t") + '">' + (v >= 0 ? "+" : "") + v.toFixed(d == null ? 2 : d) + "%</span>";
+const hhmm = ms => new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const dayTime = ms => new Date(ms).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+function fmtDur(ms) {
+  const m = Math.max(0, Math.round(ms / 60000)), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return d > 0 ? d + "d " + (h % 24) + "h" : h > 0 ? h + "h " + String(m % 60).padStart(2, "0") + "m" : m + "m";
+}
+function fmtCountdown(ms) {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(t / 86400), h = Math.floor(t % 86400 / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+  return d + "d " + String(h).padStart(2, "0") + "h " + String(m).padStart(2, "0") + "m " + String(s).padStart(2, "0") + "s";
+}
+function ago(ms) {
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  return m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago";
+}
+const dirWord = d => d === "up" ? "uptrend" : d === "down" ? "downtrend" : "range";
+function dirLabel(d) { return d === "up" ? '<span class="up-t">Up</span>' : d === "down" ? '<span class="down-t">Down</span>' : '<span class="mute-t">Sideways</span>'; }
+const arrow = d => d === "up" ? '<span class="up-t">▲</span>' : d === "down" ? '<span class="down-t">▼</span>' : '<span class="mute-t">▬</span>';
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+</script>
+<script>
+"use strict";
+/* Indicators and the per-timeframe analysis object. */
+function EMA(v, n) {
+  const out = new Array(v.length).fill(null);
+  if (v.length < n) return out;
+  let s = 0; for (let i = 0; i < n; i++) s += v[i];
+  let e = s / n; out[n - 1] = e;
+  const k = 2 / (n + 1);
+  for (let i = n; i < v.length; i++) { e = v[i] * k + e * (1 - k); out[i] = e; }
+  return out;
+}
+function SMA(v, n) {
+  const out = new Array(v.length).fill(null);
+  let s = 0;
+  for (let i = 0; i < v.length; i++) {
+    s += v[i];
+    if (i >= n) s -= v[i - n];
+    if (i >= n - 1) out[i] = s / n;
+  }
+  return out;
+}
+function RSI(v, n) {
+  n = n || 14;
+  const out = new Array(v.length).fill(null);
+  if (v.length <= n) return out;
+  let g = 0, l = 0;
+  for (let i = 1; i <= n; i++) { const d = v[i] - v[i - 1]; g += Math.max(d, 0); l += Math.max(-d, 0); }
+  g /= n; l /= n;
+  out[n] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+  for (let i = n + 1; i < v.length; i++) {
+    const d = v[i] - v[i - 1];
+    g = (g * (n - 1) + Math.max(d, 0)) / n;
+    l = (l * (n - 1) + Math.max(-d, 0)) / n;
+    out[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+  }
+  return out;
+}
+function ATR(c, n) {
+  n = n || 14;
+  const out = new Array(c.length).fill(null);
+  if (c.length <= n) return out;
+  const tr = c.map((x, i) => i === 0 ? x.h - x.l : Math.max(x.h - x.l, Math.abs(x.h - c[i - 1].c), Math.abs(x.l - c[i - 1].c)));
+  let a = 0; for (let i = 1; i <= n; i++) a += tr[i];
+  a /= n; out[n] = a;
+  for (let i = n + 1; i < c.length; i++) { a = (a * (n - 1) + tr[i]) / n; out[i] = a; }
+  return out;
+}
+/* tf is one entry of TFS. The last candle is still forming, so "closed" always means index length-2. */
+function analyze(candles, tf) {
+  const closes = candles.map(c => c.c);
+  const a = {
+    tf, candles, closes,
+    ema20: EMA(closes, 20), ema50: EMA(closes, 50), ema200: EMA(closes, 200),
+    rsi: RSI(closes, 14), atr: ATR(candles, 14), volSma: SMA(candles.map(c => c.v), 20)
+  };
+  a.swings = findSwings(a, tf.k);
+  a.struct = structureOf(a);
+  return a;
+}
+/* Simple EMA based trend. Used for the daily chart, which is kept as hidden background bias. */
+function trendOf(a) {
+  const i = a.candles.length - 2;
+  const c = a.closes[i], e20 = a.ema20[i], e50 = a.ema50[i], e200 = a.ema200[i];
+  let s = 0, max = 0;
+  if (e50 != null) { max++; s += c > e50 ? 1 : -1; }
+  if (e20 != null && e50 != null) { max++; s += e20 > e50 ? 1 : -1; }
+  if (e50 != null && e200 != null) { max++; s += e50 > e200 ? 1 : -1; }
+  if (e50 != null && i >= 5 && a.ema50[i - 5] != null) { max++; s += e50 > a.ema50[i - 5] ? 1 : -1; }
+  const dir = s >= 2 ? "up" : s <= -2 ? "down" : "side";
+  return { s, max, dir };
+}
+
+</script>
+<script>
+"use strict";
+/* Market data: Binance candles, CoinGecko market caps (coins above MIN_CAP only). */
+const CG = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false&page=";
+
+async function jget(path) {
+  let err;
+  for (const host of HOSTS) {
+    try { const r = await fetch(host + path); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); } catch (e) { err = e; }
+  }
+  throw err;
+}
+/* One Binance kline row. q = quote volume, tq = taker-buy quote volume (aggressive buyers), used for money flow. */
+function kline(k) { return { t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], q: +k[7], tq: +k[10] }; }
+/* Older candles for the chart (before time `before`). */
+async function fetchKlinesBefore(symbol, interval, before, limit) {
+  const j = await jget("/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&endTime=" + before + "&limit=" + (limit || 500));
+  return Array.isArray(j) ? j.map(kline) : [];
+}
+function resetCaches(A) {
+  ["_obAll", "_kl", "_lc", "_tlall"].forEach(k => { delete A[k]; });
+  TFS.forEach(t => { if (A[t.id]) delete A[t.id]._tlob; });
+}
+async function fetchKlines(symbol, interval) {
+  let lastErr;
+  for (const host of HOSTS) {
+    try {
+      const ctl = new AbortController();
+      const to = setTimeout(() => ctl.abort(), 9000);
+      const r = await fetch(host + "/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&limit=300", { signal: ctl.signal });
+      clearTimeout(to);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      if (!Array.isArray(j) || j.length < 120) throw new Error("Not enough candles");
+      return j.map(kline);
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+/* Five timeframes per coin. The daily one is background only. A short cache lets page changes feel instant. */
+async function fetchAll(pair, useCache) {
+  let raw = null;
+  if (useCache) {
+    try { const c = JSON.parse(store.get("kl", "null")); if (c && c.pair === pair && Date.now() - c.t < 25000) raw = c.raw; } catch (e) { /* ignore */ }
+  }
+  if (!raw) {
+    const res = await Promise.all(TFS.map(t => fetchKlines(pair, t.id)));
+    raw = {}; TFS.forEach((t, i) => { raw[t.id] = res[i]; });
+    if (useCache) store.set("kl", JSON.stringify({ pair, t: Date.now(), raw }));
+  }
+  const A = {}; TFS.forEach(t => { A[t.id] = analyze(raw[t.id], t); });
+  return A;
+}
+function demoKlines(symbol, tf) {
+  let seed = 0; for (const ch of symbol + tf.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const vol = { "5m": 0.002, "15m": 0.0035, "1h": 0.006, "4h": 0.012, "1d": 0.025 }[tf.id];
+  let p = 100, ph = 0; const out = [], now = Math.floor(Date.now() / tf.ms) * tf.ms;
+  for (let i = 0; i < 300; i++) {
+    ph += 0.12; const o = p, c = o * (1 + (rnd() - 0.47) * vol * 2 + Math.sin(ph) * vol * 0.4 + 0.0002);
+    const h = Math.max(o, c) * (1 + rnd() * vol * 0.6), l = Math.min(o, c) * (1 - rnd() * vol * 0.6);
+    out.push({ t: now - (299 - i) * tf.ms, o, h, l, c, v: 800 + rnd() * 1200 });
+    p = c;
+  }
+  return out;
+}
+function demoAll(pair) { const A = {}; TFS.forEach(t => { A[t.id] = analyze(demoKlines(pair, t), t); }); return A; }
+
+function normalizePair(raw) {
+  let s = String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!s) s = "BTCUSDT";
+  if (!s.endsWith("USDT")) s += "USDT";
+  return s;
+}
+async function loadUniverse() {
+  const setU = (list, verified, msg) => {
+    state.uni = { list, map: Object.fromEntries(list.map(c => [c.pair, c])), verified };
+    state.capMsg = msg;
+  };
+  try {
+    const cached = JSON.parse(store.get("uni", "null"));
+    if (cached && Date.now() - cached.t < 6 * 3600e3 && cached.list.length > 20) {
+      setU(cached.list, true, cached.list.length + " coins pass the filter: market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance (CoinGecko data, cached up to 6 hours).");
+      return;
+    }
+  } catch (e) { /* ignore cache errors */ }
+  let usdt;
+  try {
+    const prices = await jget("/api/v3/ticker/price");
+    usdt = new Set(prices.map(p => p.symbol).filter(s => s.endsWith("USDT")));
+  } catch (e) { usdt = null; }
+  try {
+    const seen = new Set(), list = [];
+    let rank = 0;
+    for (let page = 1; page <= 5; page++) {
+      const r = await fetch(CG + page);
+      if (!r.ok) throw new Error("CoinGecko HTTP " + r.status);
+      const j = await r.json();
+      if (!Array.isArray(j) || !j.length) break;
+      let below = false;
+      for (const c of j) {
+        rank++;
+        if (c.market_cap == null || c.market_cap < MIN_CAP) { below = true; continue; }
+        const sym = String(c.symbol).toUpperCase();
+        if (STABLE.has(sym) || seen.has(sym)) continue;
+        const pair = sym + "USDT";
+        if (usdt && !usdt.has(pair)) continue;
+        seen.add(sym); list.push({ sym, pair, name: c.name, mc: c.market_cap, rank: c.market_cap_rank || rank });
+      }
+      if (below) break;
+    }
+    if (list.length < 10) throw new Error("Too few coins returned");
+    store.set("uni", JSON.stringify({ t: Date.now(), list }));
+    setU(list, true, list.length + " coins pass the filter: market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance (CoinGecko data).");
+  } catch (e) {
+    setU(FALLBACK.map((sym, i) => ({ sym, pair: sym + "USDT", name: sym, mc: null, rank: i + 1 })), false,
+      "Could not load market caps (" + (e && e.message ? e.message : "network error") + "). Using a built-in list of 30 large coins, all far above " + fmtCap(MIN_CAP) + ". Reload to try again.");
+  }
+}
+/* Loads candles for state.symbol, runs the full analysis and builds the signal. Returns false if the coin is not allowed. */
+async function loadSymbol() {
+  const pair = normalizePair(state.symbol);
+  if (state.uni.verified && !state.uni.map[pair]) {
+    showBanner(coinOf(pair) + " is skipped. Only coins with market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance are analysed. Pick a coin from the list.");
+    return false;
+  }
+  state.symbol = pair; store.set("symbol", pair);
+  try {
+    state.A = await fetchAll(pair, true);
+    state.demo = false; showBanner("");
+  } catch (e) {
+    state.A = demoAll(pair); state.demo = true;
+    showBanner("Could not load candles from Binance (" + (e && e.message ? e.message : "network error") + "). Showing made-up demo candles, not real prices. Check the pair name and your internet connection, then try again.");
+  }
+  state.sig = buildSignal(state.A);
+  state.sessStats = sessionStats(state.A["1h"].candles);
+  if (state.liveHook) liveStart(pair);
+  return true;
+}
+
+</script>
+<script>
+"use strict";
+/* Paper-trade log. Every time the Signals page shows a LONG/SHORT SETUP with a stop and targets, it is written down here (no real money, no exchange).
+   Open trades are checked against real 5m candles: stop first, exit at Target 2, or at the market after 24 hours. Results are in R (1R = the distance to the stop), after fees. */
+const LOG_FEE = 0.001;   /* 0.1% for the round trip, taken off every trade */
+function logGet() { try { return JSON.parse(store.get("log", "[]")) || []; } catch (e) { return []; } }
+function logSet(l) { store.set("log", JSON.stringify(l.slice(-400))); }
+function logSignal(s) {
+  if (!s || !/SETUP$/.test(s.verdict) || s.sl == null || s.tp2 == null || !s.risk || state.demo) return false;
+  const L = logGet(), now = Date.now(), side = s.L ? "LONG" : "SHORT";
+  if (L.some(x => x.pair === state.symbol && x.side === side && (x.status === "open" || now - x.t < 45 * 60000))) return false;
+  L.push({ id: now, t: now, pair: state.symbol, side, entry: s.price, sl: s.sl, tp1: s.tp1, tp2: s.tp2, tp3: s.tp3, risk: s.risk, tf: s.tfLabel || "", score: s.score, max: s.max, status: "open", res: null, r: null });
+  logSet(L); return true;
+}
+function simTrade(tr, candles) {
+  const long = tr.side === "LONG", feeR = LOG_FEE * tr.entry / tr.risk, rr = Math.abs(tr.tp2 - tr.entry) / tr.risk;
+  for (const k of candles) {
+    if (k.t + 300000 <= tr.t) continue;
+    const hitSL = long ? k.l <= tr.sl : k.h >= tr.sl, hitTP = long ? k.h >= tr.tp2 : k.l <= tr.tp2;
+    if (hitSL) return { res: "STOP", r: -1 - feeR };            /* stop first when both are possible */
+    if (hitTP) return { res: "TARGET 2", r: rr - feeR };
+    if (k.t - tr.t > 24 * 3600e3) { const m = (long ? k.c - tr.entry : tr.entry - k.c) / tr.risk; return { res: "24h exit", r: m - feeR }; }
+  }
+  return null;
+}
+async function resolveTrades() {
+  const L = logGet(); let ch = false;
+  for (const tr of L) {
+    if (tr.status !== "open") continue;
+    try {
+      const j = await jget("/api/v3/klines?symbol=" + tr.pair + "&interval=5m&startTime=" + (tr.t - 300000) + "&limit=1000");
+      const out = simTrade(tr, j.map(kline)); if (out) { tr.status = "closed"; tr.res = out.res; tr.r = out.r; tr.closedAt = Date.now(); ch = true; }
+    } catch (e) { /* try again later */ }
+  }
+  if (ch) logSet(L); return L;
+}
+function logStats(L) {
+  const c = L.filter(x => x.status === "closed"), w = c.filter(x => x.r > 0), tot = c.reduce((s, x) => s + x.r, 0);
+  let eq = 0, peak = 0, dd = 0; const curve = c.map(x => { eq += x.r; peak = Math.max(peak, eq); dd = Math.max(dd, peak - eq); return eq; });
+  return { n: c.length, open: L.length - c.length, wins: w.length, win: c.length ? w.length / c.length : null, avg: c.length ? tot / c.length : null, tot, dd, curve };
+}
+
+</script>
+<script>
+"use strict";
+/* Asia, London and New York sessions: open/closed status, timeline and how the current coin behaves in each. */
+const fmtCache = {};
+function localHM(ms, tz) {
+  const f = fmtCache[tz] || (fmtCache[tz] = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" }));
+  const p = {}; f.formatToParts(ms).forEach(x => { p[x.type] = x.value; });
+  let h = +p.hour; if (h === 24) h = 0;
+  return { h, m: +p.minute, day: p.year + "-" + p.month + "-" + p.day };
+}
+function sessionActive(s, ms) { const l = localHM(ms, s.tz); const t = l.h + l.m / 60; return t >= s.from && t < s.to; }
+function sessionInfo(s, now) {
+  const act = sessionActive(s, now); let t = now;
+  for (let i = 1; i <= 48 * 12; i++) { t = now + i * 300000; if (sessionActive(s, t) !== act) break; }
+  return { act, change: t };
+}
+/* Uses 1 hour candles (about 12 days). Sessions are measured from the first to the last candle inside the session window. */
+function sessionStats(c) {
+  const avgV = c.reduce((a, k) => a + k.v, 0) / c.length;
+  return SESSIONS.map(s => {
+    const m = new Map();
+    c.forEach((k, idx) => {
+      if (!sessionActive(s, k.t)) return;
+      const key = localHM(k.t, s.tz).day; let g = m.get(key);
+      if (!g) { g = { o: k.o, c: k.c, h: k.h, l: k.l, v: 0, n: 0, t: k.t, last: idx }; m.set(key, g); }
+      g.c = k.c; g.h = Math.max(g.h, k.h); g.l = Math.min(g.l, k.l); g.v += k.v; g.n++; g.last = idx;
+    });
+    const arr = [...m.values()].sort((a, b) => a.t - b.t);
+    const cur = arr[arr.length - 1] || null;
+    const live = cur && cur.last === c.length - 1 ? cur : null;
+    const full = arr.filter(g => g !== live && g.n >= 8).slice(-7);
+    const mean = f => full.length ? full.reduce((a, g) => a + f(g), 0) / full.length : null;
+    const hrs = arr.reduce((a, g) => a + g.n, 0), vs = arr.reduce((a, g) => a + g.v, 0);
+    return { s, live: !!live, cur, curMove: cur ? (cur.c - cur.o) / cur.o * 100 : null,
+      avgMove: mean(g => (g.c - g.o) / g.o * 100), avgRange: mean(g => (g.h - g.l) / g.o * 100),
+      up: full.filter(g => g.c > g.o).length, nFull: full.length, volIdx: hrs ? (vs / hrs) / avgV : null };
+  });
+}
+function sessionLine() {
+  const now = Date.now();
+  const open = SESSIONS.filter(s => sessionActive(s, now));
+  if (!open.length) {
+    const nxt = SESSIONS.map(s => ({ s, i: sessionInfo(s, now) })).sort((a, b) => a.i.change - b.i.change)[0];
+    return "Between sessions. " + nxt.s.name + " opens in " + fmtDur(nxt.i.change - now) + ".";
+  }
+  const names = open.map(s => s.name.split(" (")[0]).join(" + ");
+  const first = open.map(s => ({ s, i: sessionInfo(s, now) })).sort((a, b) => a.i.change - b.i.change)[0];
+  return "Now: " + names + " open" + (open.length > 1 ? " (overlap, usually the busiest hours)" : "") + ". " + first.s.name.split(" (")[0] + " closes in " + fmtDur(first.i.change - now) + ".";
+}
+function renderSessions(targetId) {
+  const el = $(targetId); if (!el || !state.sessStats.length) return;
+  const now = Date.now();
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const base = d0.getTime(), pct = (now - base) / 864e5 * 100;
+  const rows = SESSIONS.map(s => {
+    let cells = "";
+    for (let i = 0; i < 96; i++) cells += '<i class="' + (sessionActive(s, base + i * 900000 + 450000) ? "on" : "") + '"></i>';
+    return '<div class="tl-row"><span class="tl-name">' + esc(s.name) + '</span><div class="tl-bar" style="--c:var(' + s.color + ')">' + cells + '<b class="now" style="left:' + pct.toFixed(2) + '%"></b></div></div>';
+  }).join("");
+  const stat = state.sessStats.map(x => {
+    const inf = sessionInfo(x.s, now);
+    const status = inf.act ? '<span class="pill up">OPEN</span> <span class="mute-t">closes ' + hhmm(inf.change) + ' (in ' + fmtDur(inf.change - now) + ')</span>'
+      : '<span class="pill mute">CLOSED</span> <span class="mute-t">opens ' + hhmm(inf.change) + ' (in ' + fmtDur(inf.change - now) + ')</span>';
+    return '<tr><td><b>' + esc(x.s.name) + '</b></td><td>' + status + '</td>' +
+      '<td class="num">' + pc(x.curMove) + ' <span class="mute-t">' + (x.live ? "now" : "last") + '</span></td>' +
+      '<td class="num">' + pc(x.avgMove) + '</td><td class="num">' + (x.avgRange == null ? "n/a" : x.avgRange.toFixed(2) + "%") + '</td>' +
+      '<td class="num">' + (x.nFull ? x.up + " of " + x.nFull : "n/a") + '</td><td class="num">' + (x.volIdx == null ? "n/a" : x.volIdx.toFixed(2) + "x") + '</td></tr>';
+  }).join("");
+  const withVol = state.sessStats.filter(x => x.volIdx != null), withRange = state.sessStats.filter(x => x.avgRange != null);
+  const busiest = withVol.slice().sort((a, b) => b.volIdx - a.volIdx)[0], widest = withRange.slice().sort((a, b) => b.avgRange - a.avgRange)[0];
+  el.innerHTML =
+    '<div class="status-row"><h2 style="margin:0">Market sessions · ' + esc(coinOf(state.symbol)) + '</h2><span class="sub" style="margin:0">' + esc(sessionLine()) + '</span></div>' +
+    rows +
+    '<div class="tl-axis"><span></span><div><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div></div>' +
+    '<div class="note" style="margin:6px 0 12px">Bars show today in your local time. The black line is now. Windows: Tokyo 09:00-18:00, London 08:00-17:00, New York 08:00-17:00, each in its own city time.</div>' +
+    '<div class="tbl"><table><thead><tr><th>Session</th><th>Status</th><th>This session</th><th>Avg move (7 sessions)</th><th>Avg range</th><th>Up sessions</th><th>Volume vs average</th></tr></thead><tbody>' + stat + '</tbody></table></div>' +
+    (busiest && widest ? '<div class="note">For ' + esc(coinOf(state.symbol)) + ', ' + esc(busiest.s.name) + ' has had the most volume per hour (' + busiest.volIdx.toFixed(2) + 'x average) and ' + esc(widest.s.name) + ' the widest price swings (' + widest.avgRange.toFixed(2) + '% per session). Based on the last 12 days of hourly candles. For scalping, the London and New York overlap is usually the best window.</div>' : '');
+}
+
+</script>
+<script>
+"use strict";
+/* Page frame shared by every page: title, menu, symbol box, banner, timers. Each page calls boot(). */
+const NAV = [["index.html", "Signals"], ["chart.html", "Chart"], ["analysis.html", "Analysis"], ["tradingview.html", "TradingView"], ["sessions.html", "Sessions"],
+  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["flow.html", "Money flow"], ["log.html", "Trade log"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
+
+function showBanner(msg) { const b = $("banner"); if (!b) return; b.hidden = !msg; b.textContent = msg; }
+function buildShell(cfg) {
+  const nav = NAV.map(([href, label]) => '<a href="' + href + '"' + (href === cfg.file ? ' aria-current="page"' : '') + '>' + label + '</a>').join("");
+  $("app").innerHTML = '<div class="wrap">' +
+    '<header class="top"><div><h1>Crypto Trend Desk <span id="liveBadge" class="pill mute" style="font-size:11px;vertical-align:middle"></span></h1><div class="sub" style="margin:0">Scalping and intraday desk for coins above $50M market cap</div></div>' +
+    (cfg.symbolBox ? '<div class="controls"><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
+      '<button id="go" class="primary">Analyze</button><label class="chk"><input type="checkbox" id="auto"> Refresh every minute</label></div>' : '') +
+    '</header><nav class="nav" aria-label="Pages">' + nav + '</nav><div id="banner" class="banner" hidden></div><div id="capNote" class="sub" style="margin:0"></div>' +
+    '<main id="main" style="display:flex;flex-direction:column;gap:16px"></main>' +
+    '<footer>This tool applies fixed rules to public Binance candles, CoinGecko market caps and public news feeds. It does not predict the market and it is not financial advice. Test any idea on paper or with very small size first, and never risk money you cannot afford to lose.</footer></div>';
+}
+function fillSymList() {
+  const dl = $("symlist"); if (!dl) return;
+  dl.innerHTML = state.uni.list.slice(0, 120).map(c => '<option value="' + c.pair + '" label="' + esc(c.name) + (c.mc ? " " + fmtCap(c.mc) : "") + '"></option>').join("");
+}
+let autoTimer = null;
+function wireSymbolBox(cfg) {
+  const go = async () => {
+    state.symbol = normalizePair($("sym").value); $("sym").value = state.symbol;
+    $("go").disabled = true; $("go").textContent = "Loading...";
+    await loadSymbol(); cfg.render(); if (cfg.afterSymbol) cfg.afterSymbol();
+    $("go").disabled = false; $("go").textContent = "Analyze";
+  };
+  $("go").addEventListener("click", go);
+  $("sym").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+  $("auto").addEventListener("change", e => { clearInterval(autoTimer); if (e.target.checked) autoTimer = setInterval(go, 60000); });
+}
+let tickN = 0;
+function startTick() {
+  setInterval(() => {
+    document.querySelectorAll(".cdn").forEach(el => { el.textContent = fmtCountdown(+el.dataset.ms - Date.now()); });
+    if (++tickN % 30 === 0) { checkSessionOpens(); if (typeof onSlowTick === "function") onSlowTick(); }
+  }, 1000);
+}
+/* cfg: file, title, skeleton (html), data (needs candles), symbolBox, render(), init(), after(), afterSymbol() */
+async function boot(cfg) {
+  document.title = cfg.title + " | Crypto Trend Desk";
+  buildShell(cfg);
+  state.symbol = store.get("symbol", "BTCUSDT"); state.chartTf = store.get("chartTf", "15m");
+  if (!SHOWN.some(t => t.id === state.chartTf)) state.chartTf = "15m";
+  if (cfg.symbolBox) $("sym").value = state.symbol;
+  if (cfg.live) state.liveHook = cfg.onLive || (() => {});
+  SESSIONS.forEach(s => { state.prevAct[s.id] = sessionActive(s, Date.now()); });
+  if (cfg.data) {
+    $("main").innerHTML = '<div class="card sub">Loading coin list and candles...</div>';
+    await loadUniverse(); fillSymList(); $("capNote").textContent = state.capMsg || "";
+    if (cfg.symbolBox) wireSymbolBox(cfg);
+    await loadSymbol();
+  }
+  $("main").innerHTML = cfg.skeleton || "";
+  if (cfg.init) cfg.init();
+  if (cfg.live) liveBadge(); else if ($("liveBadge")) $("liveBadge").hidden = true;
+  cfg.render();
+  startTick();
+  if (cfg.after) cfg.after();
+}
+
+/* ---------- Exchange links: open the pair on Binance, Bybit, OKX, Bitget or KuCoin, and copy the order details. No keys, no auto trading. ---------- */
+const EXCHANGES = [["binance", "Binance"], ["bybit", "Bybit"], ["okx", "OKX"], ["bitget", "Bitget"], ["kucoin", "KuCoin"]];
+function exchangeUrl(ex, pair, market) {
+  const base = coinOf(pair), fut = market === "futures";
+  switch (ex) {
+    case "bybit": return fut ? "https://www.bybit.com/trade/usdt/" + base + "USDT" : "https://www.bybit.com/en/trade/spot/" + base + "/USDT";
+    case "okx": return fut ? "https://www.okx.com/trade-swap/" + base.toLowerCase() + "-usdt-swap" : "https://www.okx.com/trade-spot/" + base.toLowerCase() + "-usdt";
+    case "bitget": return fut ? "https://www.bitget.com/futures/usdt/" + base + "USDT" : "https://www.bitget.com/spot/" + base + "USDT";
+    case "kucoin": return fut ? "https://www.kucoin.com/futures/trade/" + base + "USDTM" : "https://www.kucoin.com/trade/" + base + "-USDT";
+    default: return fut ? "https://www.binance.com/en/futures/" + base + "USDT" : "https://www.binance.com/en/trade/" + base + "_USDT?type=spot";
+  }
+}
+function orderText(s, pair) {
+  if (!s || !s.zone || s.sl == null) return "No active entry zone for " + pair + " right now.";
+  return pair + " " + (s.L ? "LONG" : "SHORT") + " (" + s.verdict + ")\nTimeframe: " + (s.tfLabel || "") + "\nEntry: " + fp(s.price) + "\nStop loss: " + fp(s.sl) + "\nTarget 1: " + fp(s.tp1) + "\nTarget 2: " + fp(s.tp2) + "\nTarget 3: " + fp(s.tp3);
+}
+function renderExchange(id) {
+  const el = $(id); if (!el) return;
+  const s = state.sig, ex = store.get("ex", "binance"), mk = store.get("exMarket", "spot");
+  el.innerHTML = '<h2>Trade on an exchange</h2><div class="field"><label>Exchange<select id="exSel">' + EXCHANGES.map(([k, n]) => '<option value="' + k + '"' + (k === ex ? " selected" : "") + '>' + n + '</option>').join("") + '</select></label>' +
+    '<label>Market<select id="exMk"><option value="spot"' + (mk === "spot" ? " selected" : "") + '>Spot</option><option value="futures"' + (mk === "futures" ? " selected" : "") + '>Futures</option></select></label></div>' +
+    '<div class="controls"><a id="exGo" class="primary" style="padding:8px 14px;border-radius:6px;text-decoration:none" target="_blank" rel="noopener noreferrer">Open ' + esc(coinOf(state.symbol)) + ' on exchange</a><button id="exCopy">Copy order details</button><span id="exMsg" class="note" style="margin:0"></span></div>' +
+    '<div class="note">This opens the coin on the exchange website or app. You place the order yourself, using the entry, stop loss and targets shown above. The app never asks for API keys and never trades for you. Pasting trading keys into a web page is risky, so it is left out on purpose. The signal pair is the Binance USDT pair, so check the price on your exchange before you enter.</div>';
+  const upd = () => { store.set("ex", $("exSel").value); store.set("exMarket", $("exMk").value); $("exGo").href = exchangeUrl($("exSel").value, state.symbol, $("exMk").value); };
+  $("exSel").addEventListener("change", upd); $("exMk").addEventListener("change", upd); upd();
+  $("exCopy").addEventListener("click", async () => {
+    const txt = orderText(s, state.symbol);
+    try { await navigator.clipboard.writeText(txt); $("exMsg").textContent = "Copied."; } catch (e) { $("exMsg").textContent = txt.replace(/\n/g, " | "); }
+  });
+}
+
+</script>
+<script>
+"use strict";
+const LOG_SKELETON = '<section class="card"><div class="status-row"><h2 style="margin:0">Paper trade log</h2><div class="controls"><button id="lgRe">Check open trades</button><button id="lgCsv">Copy CSV</button><button id="lgClr">Clear log</button></div></div><div id="lgSum"></div><canvas id="lgCv" height="160"></canvas></section>' +
+  '<section class="card"><div id="lgTbl"></div><div class="note">Every LONG / SHORT SETUP shown on the Signals page while it is open is logged here automatically, with its entry, stop and targets. Nothing is sent to any exchange. A trade ends at the stop (-1R), at Target 2, or after 24 hours at the market price, with a 0.1% fee taken off. If both the stop and the target sit inside one 5m candle, the stop counts first. Keep the Signals page open (or open it often) so setups get recorded. After 50 or more closed trades, the win rate and average R tell you whether the signals really work.</div></section>';
+function renderLog() {
+  const L = logGet(), S = logStats(L);
+  $("lgSum").innerHTML = '<div class="kv"><span>Closed trades</span><span class="mono">' + S.n + ' (' + S.open + ' open)</span></div>' +
+    '<div class="kv"><span>Win rate</span><span class="mono">' + (S.win == null ? "n/a" : (S.win * 100).toFixed(1) + "% (" + S.wins + " wins)") + '</span></div>' +
+    '<div class="kv"><span>Average result per trade</span><span class="mono ' + (S.avg == null ? "" : S.avg >= 0 ? "up-t" : "down-t") + '">' + (S.avg == null ? "n/a" : (S.avg >= 0 ? "+" : "") + S.avg.toFixed(2) + "R") + '</span></div>' +
+    '<div class="kv"><span>Total</span><span class="mono ' + (S.tot >= 0 ? "up-t" : "down-t") + '">' + (S.tot >= 0 ? "+" : "") + S.tot.toFixed(2) + 'R</span></div><div class="kv"><span>Worst drop from a peak</span><span class="mono">' + S.dd.toFixed(2) + 'R</span></div>' +
+    (S.n < 30 ? '<div class="sub">Under 30 closed trades is too few to judge anything.</div>' : '');
+  const cv = $("lgCv"), P = setupCanvas(cv, 160), ctx = P.ctx; ctx.clearRect(0, 0, P.w, P.h);
+  if (S.curve.length > 1) {
+    const mn = Math.min(0, ...S.curve), mx = Math.max(0.5, ...S.curve), y = v => 10 + (mx - v) / (mx - mn) * (P.h - 24), x = i => 10 + i / (S.curve.length - 1) * (P.w - 20);
+    ctx.strokeStyle = css("--line"); ctx.beginPath(); ctx.moveTo(0, y(0)); ctx.lineTo(P.w, y(0)); ctx.stroke();
+    ctx.strokeStyle = S.tot >= 0 ? css("--up") : css("--down"); ctx.lineWidth = 2; ctx.beginPath(); S.curve.forEach((v, i) => { if (i) ctx.lineTo(x(i), y(v)); else ctx.moveTo(x(i), y(v)); }); ctx.stroke();
+    ctx.fillStyle = css("--muted"); ctx.font = "11px " + css("--font-mono"); ctx.fillText("cumulative R", 10, 12);
+  }
+  $("lgTbl").innerHTML = L.length ? '<div class="tbl"><table><thead><tr><th>Time</th><th>Coin</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target 2</th><th>Score</th><th>Result</th><th>R</th></tr></thead><tbody>' +
+    L.slice().reverse().map(x => '<tr><td>' + esc(dayTime(x.t)) + '</td><td><b>' + esc(coinOf(x.pair)) + '</b></td><td><span class="pill ' + (x.side === "LONG" ? "up" : "down") + '">' + x.side + '</span></td><td class="num">' + fp(x.entry) + '</td><td class="num">' + fp(x.sl) + '</td><td class="num">' + fp(x.tp2) + '</td><td class="num">' + x.score + '/' + x.max + '</td><td>' + (x.status === "open" ? '<span class="pill warn">OPEN</span>' : esc(x.res)) + '</td><td class="num ' + (x.r == null ? "" : x.r >= 0 ? "up-t" : "down-t") + '">' + (x.r == null ? "" : (x.r >= 0 ? "+" : "") + x.r.toFixed(2)) + '</td></tr>').join("") + '</tbody></table></div>' : '<div class="sub">No trades yet. Open the Signals page and keep it open: the first LONG or SHORT SETUP will be logged here.</div>';
+}
+function setupCanvas(cv, h) { const dpr = window.devicePixelRatio || 1, w = cv.clientWidth || 800; cv.width = Math.floor(w * dpr); cv.height = Math.floor(h * dpr); cv.style.height = h + "px"; const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return { ctx, w, h }; }
+async function checkLog() { $("lgRe").disabled = true; await resolveTrades(); $("lgRe").disabled = false; renderLog(); }
+boot({ file: "log.html", title: "Trade log", data: false, symbolBox: false, skeleton: LOG_SKELETON, render: renderLog,
+  init: () => {
+    $("lgRe").addEventListener("click", checkLog);
+    $("lgClr").addEventListener("click", () => { if (confirm("Delete the whole paper trade log?")) { logSet([]); renderLog(); } });
+    $("lgCsv").addEventListener("click", () => { const csv = "time,coin,side,entry,stop,target2,score,result,R\n" + logGet().map(x => [new Date(x.t).toISOString(), x.pair, x.side, x.entry, x.sl, x.tp2, x.score, x.res || "open", x.r == null ? "" : x.r.toFixed(3)].join(",")).join("\n"); try { navigator.clipboard.writeText(csv); } catch (e) { /* ignore */ } });
+  }, after: checkLog });
+window.addEventListener("resize", () => { if ($("lgCv")) renderLog(); });
+
+</script>
+</body>
+</html>

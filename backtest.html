@@ -155,6 +155,8 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 .meter .lvl b { font-size: 13px; }
 @media (max-width: 520px) { .price { font-size: 22px; } }
 
+.pill.dir { background: var(--fg); color: var(--bg); } .pill.ind { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+
 </style>
 </head>
 <body>
@@ -1107,6 +1109,149 @@ function chartPatternsOf(a) {
 </script>
 <script>
 "use strict";
+/* Trendlines, order blocks sitting on them, and confirmation of a trendline break.
+   A support line joins two or more rising swing lows. A resistance line joins two or more falling swing highs.
+   A break counts as CONFIRMED only when the candle is strong (close beyond the line by a buffer, big body)
+   AND volume is above average AND price stays beyond the line afterwards. A retest of the line from the other side is a bonus. */
+const TL_BUF = 0.25, TL_BODY = 0.5, TL_VOL = 1.3;
+
+function trendlinesOf(a) {
+  if (a._tl) return a._tl;
+  const c = a.candles, n = c.length, end = n - 2, out = [];
+  const atrAtI = i => a.atr[i] || a.atr[end] || (c[i].h - c[i].l) || 1e-9;
+  const sw = a.swings.filter(s => s.i >= end - 260 && s.i <= end);
+  [["L", "sup"], ["H", "res"]].forEach(([type, role]) => {
+    const pts = sw.filter(s => s.type === type).slice(-12), cand = [], up = role === "sup";
+    for (let j = 0; j < pts.length; j++) for (let k = j + 1; k < pts.length; k++) {
+      const p1 = pts[j], p2 = pts[k];
+      if (p2.i - p1.i < 5) continue;
+      const slope = (p2.p - p1.p) / (p2.i - p1.i);
+      if (up ? slope <= 0 : slope >= 0) continue;
+      const yAt = i => p1.p + slope * (i - p1.i), atr = atrAtI(p2.i);
+      if (Math.abs(slope) * 20 > 5 * atr) continue;               /* too steep to be a real trendline */
+      let bad = false;
+      for (let i = p1.i + 1; i < p2.i && !bad; i++) {
+        const y = yAt(i);
+        if (up ? (c[i].c < y - 0.15 * atr || c[i].l < y - 0.6 * atr) : (c[i].c > y + 0.15 * atr || c[i].h > y + 0.6 * atr)) bad = true;
+      }
+      if (bad) continue;
+      /* touches: candle extremes that reach the line and bounce, at least 3 candles apart */
+      let touches = 0, lastT = -9, lastTouch = p2.i, brk = null; const ts = [];
+      for (let i = p1.i; i <= end; i++) {
+        const y = yAt(i), at = atrAtI(i);
+        if (i > p2.i && (up ? c[i].c < y - 0.1 * at : c[i].c > y + 0.1 * at)) { brk = i; break; }
+        const reach = up ? c[i].l <= y + 0.25 * at && c[i].l >= y - 0.6 * at : c[i].h >= y - 0.25 * at && c[i].h <= y + 0.6 * at;
+        if (reach && i - lastT >= 3) { touches++; lastT = i; lastTouch = i; ts.push(i); }
+      }
+      if (touches < 2) continue;
+      if (brk != null && end - brk > 40) continue;                /* an old, long broken line is not useful */
+      if (brk == null && end - lastTouch > 80) continue;
+      cand.push({ role, up, p1, p2, slope, touches, ts, lastTouch, brkI: brk, yAt, span: p2.i - p1.i });
+    }
+    cand.sort((x, y) => (y.brkI == null ? 1 : 0) - (x.brkI == null ? 1 : 0) || y.touches - x.touches || y.lastTouch - x.lastTouch || y.span - x.span);
+    const live = cand.filter(x => x.brkI == null).slice(0, 1), broken = cand.filter(x => x.brkI != null).sort((x, y) => y.brkI - x.brkI).slice(0, 1);
+    live.concat(broken).forEach(x => out.push(x));
+  });
+  out.forEach(L => {
+    L.nowP = L.yAt(n - 1); L.endP = L.yAt(end);
+    const price = c[n - 1].c, atr = atrAtI(end);
+    L.dist = (price - L.nowP) / price; L.distAtr = (price - L.nowP) / atr;
+    L.near = Math.abs(price - L.nowP) <= 0.6 * atr;
+    L.brk = L.brkI != null ? tlBreakCheck(a, L) : null;
+    L.status = L.brk ? L.brk.status : "intact";
+    L.name = L.up ? "Rising support line" : "Falling resistance line";
+  });
+  return (a._tl = out);
+}
+/* Confirmation of a break: candle strength + volume + follow-through + retest. */
+function tlBreakCheck(a, L) {
+  const c = a.candles, n = c.length, end = n - 2, up = L.up, b0 = L.brkI;
+  const atrAtI = i => a.atr[i] || a.atr[end] || 1e-9;
+  const dirName = up ? "down" : "up";
+  const sgn = up ? -1 : 1;                         /* beyond the line = sgn * (close - line) > 0 */
+  let best = null;
+  for (let i = b0; i <= Math.min(b0 + 2, end); i++) {
+    const k = c[i], y = L.yAt(i), at = atrAtI(i), rng = k.h - k.l || 1e-9, body = Math.abs(k.c - k.o);
+    const beyond = sgn * (k.c - y) / at, colourOk = up ? k.c < k.o : k.c > k.o;
+    const candleOk = beyond >= TL_BUF && body >= TL_BODY * rng && colourOk;
+    const vAvg = a.volSma[i - 1] || a.volSma[i] || 0, volX = vAvg ? k.v / vAvg : 0, volOk = volX >= TL_VOL;
+    const row = { i, candleOk, volOk, volX, beyond, body: body / rng, score: (candleOk ? 1 : 0) + (volOk ? 1 : 0) + (i === b0 ? 0.1 : 0) };
+    if (!best || row.score > best.score) best = row;
+  }
+  const lastClose = c[end].c, holds = sgn * (lastClose - L.yAt(end)) > -0.1 * atrAtI(end);
+  let closedBack = false;
+  for (let i = b0 + 1; i <= end; i++) if (sgn * (c[i].c - L.yAt(i)) < -0.25 * atrAtI(i)) { closedBack = true; break; }
+  /* retest: after the break price comes back to the line from the other side and closes beyond again */
+  let retest = null;
+  for (let i = best.i + 1; i <= end && !retest; i++) {
+    const y = L.yAt(i), at = atrAtI(i), touch = up ? c[i].h >= y - 0.25 * at : c[i].l <= y + 0.25 * at;
+    if (touch && sgn * (c[i].c - y) > 0) retest = i;
+  }
+  const age = end - b0;
+  let status, text;
+  const parts = [(best.candleOk ? "strong candle" : "weak candle") + " (closed " + best.beyond.toFixed(2) + " ATR beyond, body " + Math.round(best.body * 100) + "%)",
+    (best.volOk ? "volume " + best.volX.toFixed(1) + "x average" : "volume only " + best.volX.toFixed(1) + "x (need " + TL_VOL + "x)")];
+  if (closedBack) { status = "FAILED"; text = "Price closed back " + (up ? "above" : "below") + " the line, a false break."; }
+  else if (best.candleOk && best.volOk && holds) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + ", price is holding beyond the line" + (retest != null ? ", and the retest held" : "") + "."; }
+  else if (best.candleOk && best.volOk) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + "."; }
+  else if (end === b0 && (best.candleOk || best.volOk)) { status = "WAITING"; text = "Just broke on the last closed candle: " + parts.join(", ") + ". Wait for the next candle to hold."; }
+  else { status = "UNCONFIRMED"; text = "Broke the line but " + parts.join(", ") + ". Not a reliable break yet."; }
+  return { i: b0, ci: best.i, dir: dirName, age, candleOk: best.candleOk, volOk: best.volOk, volX: best.volX, beyond: best.beyond, holds: holds && !closedBack, retest, status, text };
+}
+
+/* Order blocks that sit on a trendline: formed on it, or the line runs through them now. */
+function trendObsOf(A, id) {
+  const a = A[id]; if (!a) return [];
+  if (a._tlob) return a._tlob;
+  const c = a.candles, n = c.length, end = n - 2, res = [];
+  const lines = trendlinesOf(a), obs = allOrderBlocks(A).filter(o => o.tf === id && o.kind === "ob" && (o.valid || o.age <= 60));
+  lines.forEach(L => {
+    const want = L.up ? "bull" : "bear";
+    obs.forEach(o => {
+      if (o.bias !== want) return;
+      const atr = a.atr[Math.min(o.i, end)] || a.atr[end] || 1e-9, pad = 0.4 * atr, how = [];
+      if (o.i >= L.p1.i - 3) { const y = L.yAt(o.i); if (y >= o.lo - pad && y <= o.hi + pad) how.push("formed on the trendline"); }
+      if (L.brkI == null && L.nowP >= o.lo - pad && L.nowP <= o.hi + pad) how.push("trendline runs through it now");
+      if (!how.length) return;
+      res.push({ id, line: L, ob: o, how, valid: o.valid, confirmed: !!(o.now && o.now.confirmed), live: o.live, quality: o.quality });
+    });
+  });
+  res.sort((x, y) => (y.valid ? 1 : 0) - (x.valid ? 1 : 0) || (y.confirmed ? 1 : 0) - (x.confirmed ? 1 : 0) || y.ob.i - x.ob.i);
+  return (a._tlob = res);
+}
+function allTrend(A) {
+  if (A._tlall) return A._tlall;
+  const r = {}; ["4h", "1h", "15m", "5m"].forEach(id => { if (A[id]) r[id] = { lines: trendlinesOf(A[id]), obs: trendObsOf(A, id) }; });
+  return (A._tlall = r);
+}
+/* For the signal: is there a trendline play in the trade direction? Support line + order block (long), resistance line + order block (short),
+   or a confirmed break of a line in the trade direction. */
+function trendlineCheck(A, L) {
+  const want = L ? "up" : "down", items = [];
+  ["15m", "1h"].forEach(id => {
+    if (!A[id]) return;
+    const a = A[id], end = a.candles.length - 2;
+    trendlinesOf(a).forEach(Ln => {
+      if (Ln.brkI == null && Ln.up === L && Ln.near && Ln.status === "intact") {
+        const ob = trendObsOf(A, id).find(t => t.line === Ln && t.valid);
+        if (ob) items.push({ id, kind: "ob", text: tfl(id) + " " + (L ? "rising support" : "falling resistance") + " line (" + Ln.touches + " touches) meets a valid order block" + (ob.confirmed ? ", candle confirmed" : "") });
+        else if (Ln.touches >= 3) items.push({ id, kind: "line", text: tfl(id) + " " + (L ? "rising support" : "falling resistance") + " line, " + Ln.touches + " touches, price is at it" });
+      }
+      if (Ln.brk && Ln.brk.dir === want && Ln.brk.status === "CONFIRMED" && Ln.brk.age <= 12) items.push({ id, kind: "break", text: tfl(id) + " trendline break " + want + ", confirmed by candle and volume (" + Ln.brk.age + " candles ago)" });
+    });
+  });
+  const against = [];
+  ["15m", "1h"].forEach(id => {
+    if (!A[id]) return;
+    trendlinesOf(A[id]).forEach(Ln => { if (Ln.brk && Ln.brk.dir !== want && Ln.brk.status === "CONFIRMED" && Ln.brk.age <= 8) against.push(tfl(id) + " trendline break " + Ln.brk.dir + " confirmed"); });
+  });
+  const ok = items.length > 0 && against.length === 0;
+  return { ok, items, against, text: items.length ? items.map(x => x.text).join("; ") + (against.length ? ". AGAINST: " + against.join("; ") : "") : (against.length ? "AGAINST: " + against.join("; ") : "No trendline with an order block at price, and no confirmed trendline break in your direction") };
+}
+
+</script>
+<script>
+"use strict";
 /* Market data: Binance candles, CoinGecko market caps (coins above MIN_CAP only). */
 const CG = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false&page=";
 
@@ -1116,6 +1261,17 @@ async function jget(path) {
     try { const r = await fetch(host + path); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); } catch (e) { err = e; }
   }
   throw err;
+}
+/* One Binance kline row. q = quote volume, tq = taker-buy quote volume (aggressive buyers), used for money flow. */
+function kline(k) { return { t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], q: +k[7], tq: +k[10] }; }
+/* Older candles for the chart (before time `before`). */
+async function fetchKlinesBefore(symbol, interval, before, limit) {
+  const j = await jget("/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&endTime=" + before + "&limit=" + (limit || 500));
+  return Array.isArray(j) ? j.map(kline) : [];
+}
+function resetCaches(A) {
+  ["_obAll", "_kl", "_lc", "_tlall"].forEach(k => { delete A[k]; });
+  TFS.forEach(t => { if (A[t.id]) delete A[t.id]._tlob; });
 }
 async function fetchKlines(symbol, interval) {
   let lastErr;
@@ -1128,7 +1284,7 @@ async function fetchKlines(symbol, interval) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       const j = await r.json();
       if (!Array.isArray(j) || j.length < 120) throw new Error("Not enough candles");
-      return j.map(k => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] }));
+      return j.map(kline);
     } catch (e) { lastErr = e; }
   }
   throw lastErr;
@@ -1230,6 +1386,7 @@ async function loadSymbol() {
   }
   state.sig = buildSignal(state.A);
   state.sessStats = sessionStats(state.A["1h"].candles);
+  if (state.liveHook) liveStart(pair);
   return true;
 }
 
@@ -1309,10 +1466,10 @@ function scoreHeadline(text) {
   return { s, hits, label: s >= 1 ? "bullish" : s <= -1 ? "bearish" : "neutral" };
 }
 function newsMood() {
-  const since = Date.now() - 24 * 3600e3; let sum = 0, abs = 0, cnt = 0;
+  const since = Date.now() - newsHours() * 3600e3; let sum = 0, abs = 0, cnt = 0;
   ["us", "world", "crypto"].forEach(k => {
     const d = state.news[k]; if (!d || !d.items) return;
-    d.items.forEach(it => { if (it.t >= since) { sum += it.sent.s; abs += Math.abs(it.sent.s); cnt++; } });
+    d.items.forEach(it => { if (it.t >= since && it.rel) { const w = it.rel === "direct" ? 1.5 : 1; sum += it.sent.s * w; abs += Math.abs(it.sent.s) * w; cnt++; } });
   });
   if (!cnt) return null;
   return { mood: clamp(sum / (abs + 4), -1, 1), count: cnt, sum };
@@ -1328,7 +1485,7 @@ function macroBias(now) {
   };
   chk("cpi", 72, cpiScore, "CPI"); chk("jobs", 72, jobsScore, "US jobs"); chk("fed", 7 * 24, fedScore, "Fed decision");
   const m = newsMood();
-  if (m) { const s = m.mood >= 0.3 ? 1 : m.mood <= -0.3 ? -1 : 0; parts.push({ label: "Headlines", s, text: "Headline mood " + (m.mood >= 0 ? "+" : "") + m.mood.toFixed(2) + " from " + m.count + " stories in the last 24 hours." }); total += s; }
+  if (m) { const s = m.mood >= 0.3 ? 1 : m.mood <= -0.3 ? -1 : 0; parts.push({ label: "Headlines", s, text: "Headline mood " + (m.mood >= 0 ? "+" : "") + m.mood.toFixed(2) + " from " + m.count + " relevant stories in the last " + newsHours() + " hours." }); total += s; }
   const label = total >= 1 ? "bullish" : total <= -1 ? "bearish" : "neutral";
   const text = "Macro and news mood: " + label + (parts.length ? " (" + parts.map(p => p.label + " " + (p.s > 0 ? "+" : "") + p.s).join(", ") + ")" : " (no recent data)");
   return { total, label, parts, text };
@@ -1382,47 +1539,106 @@ function gdeltTime(s) {
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/.exec(String(s || ""));
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.now();
 }
+/* ---------- Which news matters for crypto ---------- */
+/* DIRECT = about crypto itself. INDIRECT = moves the whole market (rates, inflation, dollar, wars, oil, tariffs, regulation). Anything else is dropped. */
+const DIRECT_RE = /\b(bitcoin|btc|ethereum|ether|eth|crypto\w*|blockchain|stablecoins?|tether|usdt|usdc|binance|coinbase|kraken|bybit|okx|solana|xrp|ripple|dogecoin|cardano|bnb|altcoins?|defi|nfts?|web3|halving|satoshi|microstrategy|grayscale|digital assets?|memecoins?|spot etf|bitcoin etf|ether etf)\b/i;
+const INDIRECT_CATS = [
+  ["Fed and rates", /\b(fed|federal reserve|fomc|powell|interest rates?|rate (cuts?|hikes?|decisions?)|treasury yields?|bond yields?|10-year)\b/i],
+  ["Inflation and jobs", /\b(inflation|cpi|pce|jobs report|payrolls?|unemployment|jobless|gdp|recession)\b/i],
+  ["Dollar and stocks", /\b(dollar|dxy|stock market|stocks|nasdaq|s&p ?500|dow jones|wall street|sell-?off|risk[- ]off|nvidia|ai bubble|tech stocks)\b/i],
+  ["Trade and tariffs", /\b(tariffs?|trade (war|deal)|sanctions?|export controls?)\b/i],
+  ["War and geopolitics", /\b(war|ceasefire|missiles?|airstrikes?|invasion|nuclear|iran|israel|russia|ukraine|taiwan|north korea|hormuz)\b/i],
+  ["Oil and energy", /\b(oil|opec|crude|brent)\b/i],
+  ["Banks and liquidity", /\b(bank (failure|run|collapse)|banking crisis|liquidity|default|debt ceiling|stimulus|quantitative (easing|tightening))\b/i],
+  ["Central banks and China", /\b(china|pboc|yuan|ecb|bank of japan|boj|bank of england)\b/i],
+  ["Regulation and politics", /\b(sec|cftc)\b|\b(trump)\b.{0,60}\b(tariffs?|rates?|fed|crypto|bitcoin|sanctions?|trade|tax|china)\b|\b(congress|senate)\b.{0,50}\b(bill|crypto|stablecoin|ban|spending|shutdown|debt)\b|\bgovernment shutdown\b/i]
+];
+function newsRelevance(title) {
+  if (DIRECT_RE.test(title)) return { rel: "direct", cat: "Crypto" };
+  const cats = INDIRECT_CATS.filter(([, re]) => re.test(title)).map(x => x[0]);
+  return cats.length ? { rel: "indirect", cat: cats.slice(0, 2).join(" + ") } : null;
+}
+function newsHours() { const h = +store.get("newsHrs", "12"); return [3, 6, 12, 24].indexOf(h) > -1 ? h : 12; }
+function newsRelPref() { const r = store.get("newsRel", "all"); return r === "direct" || r === "indirect" ? r : "all"; }
+/* keep only fresh (24h max stored) and relevant stories */
+function cleanNews(items) {
+  const since = Date.now() - 24 * 3600e3, seen = new Set();
+  return items.filter(x => x.title && x.t >= since && x.t <= Date.now() + 600000).map(x => {
+    const r = x.rel && x.cat ? { rel: x.rel, cat: x.cat } : newsRelevance(x.title);
+    return r ? { ...x, ...r, sent: x.sent || scoreHeadline(x.title) } : null;
+  }).filter(Boolean).filter(x => { const k = x.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => b.t - a.t);
+}
 async function loadNews(kind, force) {
-  const key = "news_" + kind;
+  const key = "news2_" + kind;
   if (!force) {
-    try { const c = JSON.parse(store.get(key, "null")); if (c && Date.now() - c.at < 15 * 60000) { state.news[kind] = c; return; } } catch (e) { /* ignore */ }
+    try { const c = JSON.parse(store.get(key, "null")); if (c && Date.now() - c.at < 10 * 60000) { c.items = cleanNews(c.items || []); state.news[kind] = c; return; } } catch (e) { /* ignore */ }
   }
   try {
     let items;
     if (kind === "crypto") {
       const j = await getJson("https://min-api.cryptocompare.com/data/v2/news/?lang=EN");
-      items = (j.Data || []).slice(0, 40).map(x => ({ title: x.title, url: x.url, src: (x.source_info && x.source_info.name) || x.source || "", t: (x.published_on || 0) * 1000 }));
+      items = (j.Data || []).slice(0, 50).map(x => ({ title: x.title, url: x.url, src: (x.source_info && x.source_info.name) || x.source || "", t: (x.published_on || 0) * 1000 }));
     } else {
       const j = await getJson(GD + encodeURIComponent(kind === "us" ? Q_US : Q_WORLD));
       items = (j.articles || []).map(x => ({ title: x.title, url: x.url, src: x.domain || "", t: gdeltTime(x.seendate) }));
     }
-    const seen = new Set();
-    items = items.filter(x => x.title && !seen.has(x.title) && seen.add(x.title)).map(x => ({ ...x, sent: scoreHeadline(x.title) })).sort((a, b) => b.t - a.t);
+    items = cleanNews(items.map(x => ({ ...x, sent: scoreHeadline(x.title) })));
     state.news[kind] = { items, at: Date.now(), error: null };
     store.set(key, JSON.stringify(state.news[kind]));
   } catch (e) {
     const old = state.news[kind];
-    state.news[kind] = { items: old && old.items ? old.items : [], at: old ? old.at : null, error: e && e.message ? e.message : "network error" };
+    state.news[kind] = { items: old && old.items ? cleanNews(old.items) : [], at: old ? old.at : null, error: e && e.message ? e.message : "network error" };
   }
+  try { localStorage.removeItem("ctd_news_" + kind); } catch (e) { /* drop the old cache */ }
 }
 /* GDELT allows about one request every 5 seconds, so the two GDELT calls are spaced out. */
 async function loadAllNews(force) {
   await loadNews("crypto", force);
+  if (typeof renderNewsStrip === "function") renderNewsStrip();
   await loadNews("us", force);
   if (!(state.news.us && state.news.us.at && Date.now() - state.news.us.at < 3000)) await sleep(5500);
   await loadNews("world", force);
 }
+function newsFilterBar() {
+  const h = newsHours(), r = newsRelPref();
+  return '<div class="controls" style="margin:0 0 8px"><span class="sub" style="margin:0">Show last</span><div class="tabs">' + [3, 6, 12, 24].map(x => '<button data-nhrs="' + x + '" aria-pressed="' + (x === h) + '">' + x + 'h</button>').join("") + '</div>' +
+    '<div class="tabs">' + [["all", "All relevant"], ["direct", "Direct crypto"], ["indirect", "Indirect (macro)"]].map(([k, l]) => '<button data-nrel="' + k + '" aria-pressed="' + (k === r) + '">' + l + '</button>').join("") + '</div></div>';
+}
+function newsVisible(d) {
+  const since = Date.now() - newsHours() * 3600e3, r = newsRelPref();
+  return (d.items || []).filter(x => x.t >= since && (r === "all" || x.rel === r));
+}
+function newsRow(x) {
+  return '<li><span style="display:flex;flex-direction:column;gap:4px;align-items:flex-start"><span class="pill ' + (x.sent.label === "bullish" ? "up" : x.sent.label === "bearish" ? "down" : "mute") + '">' + x.sent.label.toUpperCase() + '</span>' +
+    '<span class="pill ' + (x.rel === "direct" ? "dir" : "ind") + '">' + (x.rel === "direct" ? "DIRECT" : "INDIRECT") + '</span></span>' +
+    '<span><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.title) + '</a><small>' + esc(x.src) + ' · ' + ago(x.t) + ' · ' + esc(x.cat) + (x.sent.hits.length ? ' · ' + esc(x.sent.hits.join(", ")) : '') + '</small></span></li>';
+}
+/* the most useful few stories across all feeds, newest and strongest first */
+function topNews(n, hrs) {
+  const since = Date.now() - (hrs || 6) * 3600e3, all = [];
+  ["crypto", "us", "world"].forEach(k => { const d = state.news[k]; if (d && d.items) d.items.forEach(x => { if (x.t >= since) all.push(x); }); });
+  const seen = new Set();
+  return all.map(x => ({ x, sc: (x.rel === "direct" ? 2 : 0) + Math.abs(x.sent.s) + (x.t > Date.now() - 3600e3 ? 1 : 0) })).sort((a, b) => b.sc - a.sc || b.x.t - a.x.t)
+    .filter(o => { const k = o.x.title.slice(0, 50); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, n).map(o => o.x);
+}
 function newsListHtml(kind) {
   const d = state.news[kind];
   if (!d) return '<div class="sub">Loading headlines...</div>';
-  const mood = (() => { let s = 0, a = 0; d.items.forEach(x => { s += x.sent.s; a += Math.abs(x.sent.s); }); return d.items.length ? clamp(s / (a + 4), -1, 1) : 0; })();
-  const head = d.items.length ? '<div class="status-row"><span class="sub" style="margin:0">' + d.items.length + ' headlines, last 24 hours. Mood ' + '<b class="' + (mood >= 0.3 ? "up-t" : mood <= -0.3 ? "down-t" : "mute-t") + '">' +
-    (mood >= 0.3 ? "bullish" : mood <= -0.3 ? "bearish" : "neutral") + ' (' + (mood >= 0 ? "+" : "") + mood.toFixed(2) + ')</b>' + (d.at ? ', updated ' + ago(d.at) : '') + '</span></div>' : '';
+  const vis = newsVisible(d);
+  const mood = (() => { let s = 0, a = 0; vis.forEach(x => { s += x.sent.s; a += Math.abs(x.sent.s); }); return vis.length ? clamp(s / (a + 4), -1, 1) : 0; })();
+  const head = '<div class="status-row"><span class="sub" style="margin:0">' + vis.length + ' relevant headlines in the last ' + newsHours() + ' hours. ' + (vis.length ? 'Mood <b class="' + (mood >= 0.3 ? "up-t" : mood <= -0.3 ? "down-t" : "mute-t") + '">' +
+    (mood >= 0.3 ? "bullish" : mood <= -0.3 ? "bearish" : "neutral") + ' (' + (mood >= 0 ? "+" : "") + mood.toFixed(2) + ')</b>' : '') + (d.at ? ', updated ' + ago(d.at) : '') + '</span></div>';
   const err = d.error ? '<div class="banner" style="margin-bottom:8px">Could not refresh this feed (' + esc(d.error) + '). ' + (d.items.length ? 'Showing the last saved headlines.' : 'Check your internet connection, or open the source site directly.') + '</div>' : '';
-  return err + head + (d.items.length ? '<ul class="news">' + d.items.slice(0, 30).map(x =>
-    '<li><span><span class="pill ' + (x.sent.label === "bullish" ? "up" : x.sent.label === "bearish" ? "down" : "mute") + '">' + x.sent.label.toUpperCase() + '</span></span>' +
-    '<span><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.title) + '</a><small>' + esc(x.src) + ' · ' + ago(x.t) + (x.sent.hits.length ? ' · ' + esc(x.sent.hits.join(", ")) : '') + '</small></span></li>').join("") + '</ul>' : '<div class="sub">No headlines.</div>');
+  return err + newsFilterBar() + head + (vis.length ? '<ul class="news">' + vis.slice(0, 30).map(newsRow).join("") + '</ul>' :
+    '<div class="sub">No relevant headlines in this window. Old and unrelated stories are hidden. Try a longer window.</div>') +
+    '<div class="note">DIRECT = about crypto itself. INDIRECT = moves all markets (Fed and rates, inflation, dollar and stocks, tariffs, war, oil, banks, regulation). Unrelated stories and anything older than 24 hours are removed.</div>';
 }
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest("[data-nhrs],[data-nrel]"); if (!b) return;
+  if (b.dataset.nhrs) store.set("newsHrs", b.dataset.nhrs); if (b.dataset.nrel) store.set("newsRel", b.dataset.nrel);
+  if (typeof refreshNews === "function") refreshNews(); if (typeof renderNewsStrip === "function") renderNewsStrip();
+});
 
 </script>
 <script>
@@ -1587,6 +1803,7 @@ function buildSignal(A) {
   const smcTxt = [].concat(evSup.slice(0, 2).map(e => e.name + " " + e.tf + " (" + e.age + " candles ago)"), liqSup ? ["Liquidity sweep then CHoCH on 15m"] : [], cpSup.slice(0, 2).map(p => p.name + " " + p.tf))
     .concat(evOpp.map(e => "AGAINST: " + e.name + " " + e.tf)).join("; ") || "No recent BOS, CHoCH, liquidity sweep or chart pattern in your direction";
 
+  const tlc = trendlineCheck(A, L);
   const checks = [
     { ok: htf * (L ? 1 : -1) >= 2, w: 2, label: "Bigger trend agrees", d: "4H " + dirWord(H4.struct.dir) + ", 1H " + dirWord(H1.struct.dir) + ", plus the daily chart in the background" },
     { ok: M15.struct.dir === want, w: 1, label: "15 min structure " + (L ? "HH + HL" : "LH + LL"), d: "15m is a " + dirWord(M15.struct.dir) + (M15.struct.shift ? " (structure just shifted)" : "") + ". Last swings: " + (M15.struct.seq.join(" ") || "none") },
@@ -1598,6 +1815,7 @@ function buildSignal(A) {
     { ok: nAgree >= 2 && nOpp === 0, w: 1, label: "Last 50 and 100 candles agree", d: ln.map(x => x[0] + ": " + x[1].label).join(", ") },
     { ok: lcSup.length > 0 && lcOpp.length === 0, w: 1, label: "4H / 1H level confirmed (15m / 5m candle)", d: lcSup.length ? lcSup.slice(0, 2).map(r => r.text).join(" ") : lcOpp.length ? "AGAINST: " + lcOpp[0].text : "No 4H or 1H support/resistance is being tested on the 15m / 5m chart right now" },
     { ok: smcOk, w: 1, label: "Structure and liquidity support (BOS, CHoCH, sweep, pattern)", d: smcTxt },
+    { ok: tlc.ok, w: 1, label: "Trendline + order block, or confirmed trendline break", d: tlc.text },
     { ok: macroOk, w: 1, label: "News and macro mood not against you", d: macro.bias.text }
   ];
   const max = checks.reduce((s, x) => s + x.w, 0), score = checks.reduce((s, x) => s + (x.ok ? x.w : 0), 0);
@@ -1647,7 +1865,7 @@ function buildSignal(A) {
     atr15, atr5, macro, near, srNote, rsi15, t5: M5.candles[end5].t, patBest, trg,
     pat: { supportP: trg.support, opposeP: trg.oppose },
     struct: { h4: H4.struct, h1: H1.struct, m15: M15.struct, m5: M5.struct }, sameBreaks, oppBreaks,
-    tfLabel, trigTfs, sigTf: zone ? zone.tf : null, lc: levelConfirm(A).filter(r => r.read !== "none").slice(0, 4), lcSup, lcOpp, obsNear, evSup, evOpp, liqM, cpSup, cpOpp, oppList
+    tlc, tfLabel, trigTfs, sigTf: zone ? zone.tf : null, lc: levelConfirm(A).filter(r => r.read !== "none").slice(0, 4), lcSup, lcOpp, obsNear, evSup, evOpp, liqM, cpSup, cpOpp, oppList
   };
 }
 
@@ -1859,15 +2077,105 @@ function checkSessionOpens() {
 </script>
 <script>
 "use strict";
+/* Live link to Binance. Candles and price update by themselves through Binance's public WebSocket (no keys).
+   If the WebSocket is blocked or keeps failing, the app falls back to asking Binance for the latest candles every few seconds. */
+const LIVE = { ws: null, pair: null, mode: "off", tries: 0, timer: null, poll: null, dirty: {}, lastMsg: 0, lastHook: 0, hookMs: 1000, retry: null };
+const WS_HOSTS = ["wss://stream.binance.com:9443/stream?streams=", "wss://data-stream.binance.vision/stream?streams="];
+
+function liveBadge() {
+  const el = $("liveBadge"); if (!el) return;
+  const m = LIVE.mode, cls = m === "live" ? "up" : m === "poll" ? "warn" : m === "connecting" ? "warn" : "mute";
+  const txt = m === "live" ? "● LIVE" : m === "poll" ? "● LIVE (refresh)" : m === "connecting" ? "connecting..." : state.demo ? "demo data" : "offline";
+  el.className = "pill " + cls; el.textContent = txt;
+  el.title = m === "live" ? "Connected to Binance live stream" : m === "poll" ? "WebSocket not available, refreshing every few seconds" : "";
+}
+/* merge one candle (from the stream or from polling) into state.A[tf]; analysis is redone on the timer */
+function liveApply(tfId, cd) {
+  const a = state.A[tfId]; if (!a) return;
+  const arr = a.candles, last = arr[arr.length - 1];
+  if (cd.t === last.t) arr[arr.length - 1] = { ...last, ...cd };
+  else if (cd.t > last.t) {
+    arr.push(cd);
+    if (arr.length > 1800) arr.splice(0, arr.length - 1800);
+    if (state.view && state.view.off > 0 && tfId === state.chartTf) state.view.off++;   /* keep the chart where the person scrolled to */
+  } else return;
+  LIVE.dirty[tfId] = true;
+}
+function liveFlush() {
+  const ids = Object.keys(LIVE.dirty); if (!ids.length) return false;
+  ids.forEach(id => { const a = state.A[id]; if (a) state.A[id] = analyze(a.candles, a.tf); });
+  LIVE.dirty = {}; resetCaches(state.A); return true;
+}
+function liveTick() {
+  if (document.hidden) return;
+  if (liveFlush()) {
+    const now = Date.now();
+    if (state.liveHook && now - LIVE.lastHook >= LIVE.hookMs) { LIVE.lastHook = now; try { state.liveHook(); } catch (e) { /* ignore */ } }
+  }
+  /* stream went silent: reconnect */
+  if (LIVE.mode === "live" && Date.now() - LIVE.lastMsg > 20000) liveReconnect();
+}
+function wsMsg(ev) {
+  let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+  const k = m && m.data && m.data.k; if (!k) return;
+  LIVE.lastMsg = Date.now();
+  liveApply(k.i, { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v, q: +k.q, tq: +k.Q });
+}
+function liveConnect() {
+  if (!LIVE.pair || state.demo || typeof WebSocket === "undefined") { liveFallback(); return; }
+  const streams = TFS.map(t => LIVE.pair.toLowerCase() + "@kline_" + t.id).join("/");
+  let ws; LIVE.mode = "connecting"; liveBadge();
+  try { ws = new WebSocket(WS_HOSTS[LIVE.tries % WS_HOSTS.length] + streams); } catch (e) { liveFallback(); return; }
+  LIVE.ws = ws; const pair = LIVE.pair; let opened = false;
+  ws.onopen = () => { opened = true; LIVE.mode = "live"; LIVE.tries = 0; LIVE.lastMsg = Date.now(); stopPoll(); liveBadge(); };
+  ws.onmessage = wsMsg;
+  ws.onerror = () => { /* onclose follows */ };
+  ws.onclose = () => {
+    if (LIVE.ws !== ws || LIVE.pair !== pair) return;
+    LIVE.ws = null; LIVE.tries++;
+    if (LIVE.tries >= 3 && !opened) { liveFallback(); return; }
+    LIVE.mode = "connecting"; liveBadge(); clearTimeout(LIVE.retry); LIVE.retry = setTimeout(liveConnect, Math.min(15000, 1500 * LIVE.tries));
+  };
+}
+function liveReconnect() { try { if (LIVE.ws) { const w = LIVE.ws; LIVE.ws = null; w.onclose = null; w.close(); } } catch (e) { /* ignore */ } LIVE.tries = 0; liveConnect(); }
+function stopPoll() { clearInterval(LIVE.poll); LIVE.poll = null; }
+function liveFallback() {
+  if (!LIVE.pair || state.demo) { LIVE.mode = "off"; liveBadge(); return; }
+  LIVE.mode = "poll"; liveBadge(); stopPoll();
+  const pair = LIVE.pair, run = async () => {
+    if (document.hidden || LIVE.pair !== pair) return;
+    for (const t of TFS) {
+      try { const j = await jget("/api/v3/klines?symbol=" + encodeURIComponent(pair) + "&interval=" + t.id + "&limit=2"); j.map(kline).forEach(c => liveApply(t.id, c)); } catch (e) { /* try next time */ }
+    }
+  };
+  run(); LIVE.poll = setInterval(run, 8000);
+}
+/* called after every successful candle load */
+function liveStart(pair) {
+  if (state.demo) { liveStop(); LIVE.pair = null; LIVE.mode = "off"; liveBadge(); return; }
+  if (LIVE.pair === pair && (LIVE.mode === "live" || LIVE.mode === "poll" || LIVE.mode === "connecting")) return;
+  liveStop(); LIVE.pair = pair; LIVE.tries = 0; liveConnect();
+  if (!LIVE.timer) LIVE.timer = setInterval(liveTick, 1000);
+}
+function liveStop() {
+  clearTimeout(LIVE.retry); stopPoll();
+  try { if (LIVE.ws) { const w = LIVE.ws; LIVE.ws = null; w.onclose = null; w.close(); } } catch (e) { /* ignore */ }
+  LIVE.mode = "off";
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && LIVE.pair && LIVE.mode !== "poll") liveReconnect(); });
+
+</script>
+<script>
+"use strict";
 /* Page frame shared by every page: title, menu, symbol box, banner, timers. Each page calls boot(). */
 const NAV = [["index.html", "Signals"], ["chart.html", "Chart"], ["analysis.html", "Analysis"], ["tradingview.html", "TradingView"], ["sessions.html", "Sessions"],
-  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
+  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["flow.html", "Money flow"], ["log.html", "Trade log"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
 
 function showBanner(msg) { const b = $("banner"); if (!b) return; b.hidden = !msg; b.textContent = msg; }
 function buildShell(cfg) {
   const nav = NAV.map(([href, label]) => '<a href="' + href + '"' + (href === cfg.file ? ' aria-current="page"' : '') + '>' + label + '</a>').join("");
   $("app").innerHTML = '<div class="wrap">' +
-    '<header class="top"><div><h1>Crypto Trend Desk</h1><div class="sub" style="margin:0">Scalping and intraday desk for coins above $50M market cap</div></div>' +
+    '<header class="top"><div><h1>Crypto Trend Desk <span id="liveBadge" class="pill mute" style="font-size:11px;vertical-align:middle"></span></h1><div class="sub" style="margin:0">Scalping and intraday desk for coins above $50M market cap</div></div>' +
     (cfg.symbolBox ? '<div class="controls"><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
       '<button id="go" class="primary">Analyze</button><label class="chk"><input type="checkbox" id="auto"> Refresh every minute</label></div>' : '') +
     '</header><nav class="nav" aria-label="Pages">' + nav + '</nav><div id="banner" class="banner" hidden></div><div id="capNote" class="sub" style="margin:0"></div>' +
@@ -1904,6 +2212,7 @@ async function boot(cfg) {
   state.symbol = store.get("symbol", "BTCUSDT"); state.chartTf = store.get("chartTf", "15m");
   if (!SHOWN.some(t => t.id === state.chartTf)) state.chartTf = "15m";
   if (cfg.symbolBox) $("sym").value = state.symbol;
+  if (cfg.live) state.liveHook = cfg.onLive || (() => {});
   SESSIONS.forEach(s => { state.prevAct[s.id] = sessionActive(s, Date.now()); });
   if (cfg.data) {
     $("main").innerHTML = '<div class="card sub">Loading coin list and candles...</div>';
@@ -1913,6 +2222,7 @@ async function boot(cfg) {
   }
   $("main").innerHTML = cfg.skeleton || "";
   if (cfg.init) cfg.init();
+  if (cfg.live) liveBadge(); else if ($("liveBadge")) $("liveBadge").hidden = true;
   cfg.render();
   startTick();
   if (cfg.after) cfg.after();
@@ -1959,7 +2269,8 @@ const BT_SKEL = '<section class="card"><h2>Backtest on real Binance candles</h2>
   '<div class="field"><label>Coins (comma separated)<input id="btCoins" value="BTCUSDT,ETHUSDT,SOLUSDT"></label>' +
   '<label>Days of history<select id="btDays"><option>7</option><option selected>14</option><option>30</option><option>60</option></select></label>' +
   '<label>Check signals every<select id="btStep"><option value="15">15 minutes</option><option value="5">5 minutes (slower)</option></select></label>' +
-  '<label>Fees, round trip (%)<input id="btFee" value="0.1" inputmode="decimal"></label></div>' +
+  '<label>Fees, round trip (%)<input id="btFee" value="0.1" inputmode="decimal"></label>' +
+  '<label>Test period ends<select id="btSkip"><option value="0">today</option><option value="30">30 days ago</option><option value="60">60 days ago</option><option value="90">90 days ago</option><option value="120">120 days ago</option><option value="180">180 days ago</option><option value="270">270 days ago</option></select></label></div>' +
   '<h3>Filters (change these and press Re-apply, no new download)</h3>' +
   '<div class="sess-checks" id="btTypes">' + ["TRAP", "RETEST", "PULLBACK", "ORDER BLOCK", "BREAKOUT"].map(x => '<label class="chk"><input type="checkbox" data-t="' + x + '" checked> ' + x + '</label>').join("") + '</div>' +
   '<div class="sess-checks" id="btTfs">' + ["5m", "15m", "1H", "4H"].map(x => '<label class="chk"><input type="checkbox" data-f="' + x + '" checked> zone ' + x + '</label>').join("") + '</div>' +
@@ -2005,8 +2316,8 @@ function btSim(c5, i0, L, price, risk) {
 }
 const btR = (r, n) => n === 1 ? (r.h1 ? 1 : r.stop ? -1 : r.closeR) : n === 2 ? (r.h2 ? 2 : r.stop ? -1 : r.closeR) : (r.h3 ? 3 : r.stop ? -1 : r.closeR);
 
-async function btCoin(symbol, days, stepMin, setProg) {
-  const end = Math.floor(Date.now() / 300000) * 300000, start = end - days * 864e5, data = {};
+async function btCoin(symbol, days, stepMin, skip, setProg) {
+  const end = Math.floor((Date.now() - skip * 864e5) / 300000) * 300000, start = end - days * 864e5, data = {};
   for (const tf of TFS) {
     setProg("Downloading " + coinOf(symbol) + " " + tf.id + " candles...");
     data[tf.id] = (await btFetch(symbol, tf, start - 310 * tf.ms, end)).filter(k => k.t + tf.ms <= end);
@@ -2104,7 +2415,7 @@ function btRender(all, days) {
   const groups = key => { const m = {}; all.forEach(t => { (m[t[key]] = m[t[key]] || []).push(t); }); return Object.keys(m).sort((a, b) => m[b].length - m[a].length).map(k => btRow(esc(k), btStats(m[k], 2))).join(""); };
   const s1 = btStats(all, 1), s2 = btStats(all, 2), s3 = btStats(all, 3), m1 = btStats(all, 1, true), m2 = btStats(all, 2, true);
   const enough = n >= 100 ? "" : '<div class="banner" style="margin-bottom:10px">Only ' + n + ' trades. That is too few to trust. Use 30 or 60 days and more coins, and aim for 100 or more trades.</div>';
-  out.innerHTML = '<h2>Result: ' + n + ' trades in ' + days + ' days</h2>' + enough +
+  out.innerHTML = '<h2>Result: ' + n + ' trades in ' + days + ' days (' + esc(new Date(BT.t0).toLocaleDateString()) + ' to ' + esc(new Date(BT.t1).toLocaleDateString()) + ')</h2>' + enough +
     '<div class="meter"><div class="lvl"><span>Reached target 1 before the stop</span><b>' + hit("h1").toFixed(0) + '%</b></div><div class="lvl"><span>Reached target 2</span><b>' + hit("h2").toFixed(0) + '%</b></div><div class="lvl"><span>Reached target 3</span><b>' + hit("h3").toFixed(0) + '%</b></div><div class="lvl"><span>Stopped out</span><b>' + stopFirst.toFixed(0) + '%</b></div></div>' +
     '<h3>If you exit the whole trade at one target (fees included)</h3><div class="tbl"><table>' + BT_HEAD + '<tbody>' + btRow("All out at target 1", s1) + btRow("All out at target 2", s2) + btRow("All out at target 3", s3) + '</tbody></table></div>' +
     '<h3>Sanity check: the same entries, but in the opposite direction</h3><div class="tbl"><table>' + BT_HEAD + '<tbody>' + btRow("Opposite, target 1", m1) + btRow("Opposite, target 2", m2) + '</tbody></table></div>' +
@@ -2119,7 +2430,7 @@ function btRender(all, days) {
 }
 function btSetup() {
   $("btGo").addEventListener("click", async () => {
-    const coins = $("btCoins").value.split(/[\s,]+/).filter(Boolean).map(normalizePair).slice(0, 10), days = +$("btDays").value, step = +$("btStep").value;
+    const coins = $("btCoins").value.split(/[\s,]+/).filter(Boolean).map(normalizePair).slice(0, 10), days = +$("btDays").value, step = +$("btStep").value, skip = +$("btSkip").value;
     if (!coins.length) return;
     btCancel = false; $("btGo").disabled = true; $("btStop").disabled = false; $("btOut").hidden = true;
     const realMacro = macroState; macroState = () => ({ block: null, caution: null, next: null, bias: { label: "neutral", text: "Backtest: news filter off", parts: [], total: 0 }, events: [] });
@@ -2127,10 +2438,10 @@ function btSetup() {
     try {
       for (const c of coins) {
         if (btCancel) break;
-        try { const r = await btCoin(c, days, step, s => { $("btProg").textContent = s; }); BT.cands[c] = r.cands; BT.c5[c] = r.c5; } catch (e) { errs.push(coinOf(c) + ": " + (e && e.message ? e.message : e)); }
+        try { const r = await btCoin(c, days, step, skip, s => { $("btProg").textContent = s; }); BT.cands[c] = r.cands; BT.c5[c] = r.c5; } catch (e) { errs.push(coinOf(c) + ": " + (e && e.message ? e.message : e)); }
       }
     } finally { macroState = realMacro; }
-    BT.t1 = Math.floor(Date.now() / 300000) * 300000; BT.t0 = BT.t1 - days * 864e5;
+    BT.t1 = Math.floor((Date.now() - skip * 864e5) / 300000) * 300000; BT.t0 = BT.t1 - days * 864e5;
     const all = btEval({ verdict: "SETUP", zones: null, tfs: null, dir: "both", rm: 0, t0: BT.t0, t1: BT.t1 + 1 }, true);
     $("btProg").textContent = (btCancel ? "Cancelled. " : "Finished. ") + all.length + " trades." + (errs.length ? " Problems: " + errs.join("; ") : "");
     btRender(all, days); $("btExp").hidden = true;
