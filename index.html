@@ -2169,7 +2169,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && LI
 "use strict";
 /* Page frame shared by every page: title, menu, symbol box, banner, timers. Each page calls boot(). */
 const NAV = [["index.html", "Signals"], ["chart.html", "Chart"], ["analysis.html", "Analysis"], ["tradingview.html", "TradingView"], ["sessions.html", "Sessions"],
-  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["flow.html", "Money flow"], ["log.html", "Trade log"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
+  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["flow.html", "Money flow"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
 
 function showBanner(msg) { const b = $("banner"); if (!b) return; b.hidden = !msg; b.textContent = msg; }
 function buildShell(cfg) {
@@ -2291,49 +2291,6 @@ function flowStats(c, btc) {
 </script>
 <script>
 "use strict";
-/* Paper-trade log. Every time the Signals page shows a LONG/SHORT SETUP with a stop and targets, it is written down here (no real money, no exchange).
-   Open trades are checked against real 5m candles: stop first, exit at Target 2, or at the market after 24 hours. Results are in R (1R = the distance to the stop), after fees. */
-const LOG_FEE = 0.001;   /* 0.1% for the round trip, taken off every trade */
-function logGet() { try { return JSON.parse(store.get("log", "[]")) || []; } catch (e) { return []; } }
-function logSet(l) { store.set("log", JSON.stringify(l.slice(-400))); }
-function logSignal(s) {
-  if (!s || !/SETUP$/.test(s.verdict) || s.sl == null || s.tp2 == null || !s.risk || state.demo) return false;
-  const L = logGet(), now = Date.now(), side = s.L ? "LONG" : "SHORT";
-  if (L.some(x => x.pair === state.symbol && x.side === side && (x.status === "open" || now - x.t < 45 * 60000))) return false;
-  L.push({ id: now, t: now, pair: state.symbol, side, entry: s.price, sl: s.sl, tp1: s.tp1, tp2: s.tp2, tp3: s.tp3, risk: s.risk, tf: s.tfLabel || "", score: s.score, max: s.max, status: "open", res: null, r: null });
-  logSet(L); return true;
-}
-function simTrade(tr, candles) {
-  const long = tr.side === "LONG", feeR = LOG_FEE * tr.entry / tr.risk, rr = Math.abs(tr.tp2 - tr.entry) / tr.risk;
-  for (const k of candles) {
-    if (k.t + 300000 <= tr.t) continue;
-    const hitSL = long ? k.l <= tr.sl : k.h >= tr.sl, hitTP = long ? k.h >= tr.tp2 : k.l <= tr.tp2;
-    if (hitSL) return { res: "STOP", r: -1 - feeR };            /* stop first when both are possible */
-    if (hitTP) return { res: "TARGET 2", r: rr - feeR };
-    if (k.t - tr.t > 24 * 3600e3) { const m = (long ? k.c - tr.entry : tr.entry - k.c) / tr.risk; return { res: "24h exit", r: m - feeR }; }
-  }
-  return null;
-}
-async function resolveTrades() {
-  const L = logGet(); let ch = false;
-  for (const tr of L) {
-    if (tr.status !== "open") continue;
-    try {
-      const j = await jget("/api/v3/klines?symbol=" + tr.pair + "&interval=5m&startTime=" + (tr.t - 300000) + "&limit=1000");
-      const out = simTrade(tr, j.map(kline)); if (out) { tr.status = "closed"; tr.res = out.res; tr.r = out.r; tr.closedAt = Date.now(); ch = true; }
-    } catch (e) { /* try again later */ }
-  }
-  if (ch) logSet(L); return L;
-}
-function logStats(L) {
-  const c = L.filter(x => x.status === "closed"), w = c.filter(x => x.r > 0), tot = c.reduce((s, x) => s + x.r, 0);
-  let eq = 0, peak = 0, dd = 0; const curve = c.map(x => { eq += x.r; peak = Math.max(peak, eq); dd = Math.max(dd, peak - eq); return eq; });
-  return { n: c.length, open: L.length - c.length, wins: w.length, win: c.length ? w.length / c.length : null, avg: c.length ? tot / c.length : null, tot, dd, curve };
-}
-
-</script>
-<script>
-"use strict";
 /* Signals page: scanner across all coins above $50M, the main signal with its checklist, news strip and position size. */
 const SIGNALS_SKELETON =
   '<section class="card" id="scanCard"><div class="status-row"><h2 style="margin:0">Scanner</h2><span id="scanStatus" class="sub" style="margin:0"></span></div>' +
@@ -2342,7 +2299,7 @@ const SIGNALS_SKELETON =
   '<label class="chk"><input type="checkbox" id="autoscan"> Auto-scan every <select id="scanEvery" aria-label="Scan interval"><option value="1">1</option><option value="2" selected>2</option><option value="5">5</option></select> minutes</label></div>' +
   '<div class="tbl tall"><table id="scanTable"></table></div>' +
   '<div class="note">Click a row to open that coin. A setup needs the 4H, 1H and hidden daily trend to agree, price at a pullback, retest or valid order block zone, a confirming 5m or 15m candle, and a score of ' + SETUP_MIN + ' or more. A candle or broken level pointing the other way downgrades it to WATCH. Keep this page open to get alerts.</div></section>' +
-  '<div class="grid"><section class="card" id="signalCard" aria-live="polite"></section><div class="stack"><section class="card" id="newsStrip"></section><section class="card" id="riskCard"></section><section class="card" id="inCard"></section><section class="card" id="flowCard"></section><section class="card" id="exCard"></section></div></div>';
+  '<div class="grid"><section class="card" id="signalCard" aria-live="polite"></section><div class="stack"><section class="card" id="newsStrip"></section><section class="card" id="riskCard"></section><section class="card" id="flowCard"></section><section class="card" id="exCard"></section></div></div>';
 
 const READ_PILL = { reversal: ["REVERSAL", "warn"], break: ["TREND BREAK", "up"], trap: ["FALSE BREAK", "warn"] };
 function smcBlock(s) {
@@ -2467,13 +2424,6 @@ function setupScanUi() {
   $("scanTable").addEventListener("click", open);
   $("scanTable").addEventListener("keydown", e => { if (e.key === "Enter") open(e); });
 }
-function renderInCard() {
-  const el = $("inCard"), s = state.sig; if (!el || !s) return;
-  const a = state.A["15m"], e = a.candles.length - 2, c = a.candles[e + 1], atr = a.atr[e], tfMs = 900000, left = Math.max(0, tfMs - (Date.now() - c.t));
-  const rows = [["Price vs 15m EMA 20", ((c.c - a.ema20[e]) / atr).toFixed(2) + " ATR"], ["Time left in 15m candle", Math.floor(left / 60000) + ":" + String(Math.floor(left / 1000) % 60).padStart(2, "0")],
-    ["Volatility (15m ATR)", (100 * atr / c.c).toFixed(2) + "%"], ["15m RSI", a.rsi[e].toFixed(0)], ["15m structure", a.struct.dir], ["Checklist score", s.score + " of " + s.max]];
-  el.innerHTML = '<h2>Signals in</h2>' + rows.map(([k, v]) => '<div class="kv"><span>' + k + '</span><span class="mono">' + esc(String(v)) + '</span></div>').join("") + '<div class="note">Paper results of past setups are on the <a href="log.html">Trade log</a> page.</div>';
-}
 async function renderFlowCard() {
   const el = $("flowCard"); if (!el) return;
   if (state.demo) { el.innerHTML = '<h2>Money flow</h2><div class="sub">Not available for demo data.</div>'; return; }
@@ -2484,14 +2434,14 @@ async function renderFlowCard() {
     [["Net 1h", st.f1], ["Net 4h", st.f4], ["Net 24h", st.f24]].map(([l, f]) => '<div class="kv"><span>' + l + ' (buyers minus sellers)</span><span class="mono ' + (f.net >= 0 ? "up-t" : "down-t") + '">' + fmtUsd(f.net) + ' · ' + (f.share * 100).toFixed(1) + '% buy</span></div>').join("") +
     '<div class="sub" style="margin-top:6px">' + esc(st.pts.map(p => (p.v > 0 ? "+ " : p.v < 0 ? "- " : "· ") + p.t).join("; ")) + '</div><div class="note">All coins on the <a href="flow.html">Money flow</a> page.</div>';
 }
-function renderPage() { renderSignal(); renderNewsStrip(); renderRisk(); renderScan(); renderInCard(); renderFlowCard(); logSignal(state.sig); }
+function renderPage() { renderSignal(); renderNewsStrip(); renderRisk(); renderScan(); renderFlowCard(); }
 LIVE.hookMs = 5000;
 function onSlowTick() { renderNewsStrip(); }
 
 boot({
   file: "index.html", title: "Signals", data: true, symbolBox: true, skeleton: SIGNALS_SKELETON, render: renderPage,
   init: setupScanUi, live: true,
-  onLive: () => { state.sig = buildSignal(state.A); renderSignal(); renderInCard(); logSignal(state.sig); },
+  onLive: () => { state.sig = buildSignal(state.A); renderSignal(); },
   after: async () => {
     runScan();
     await loadAllNews(false);
