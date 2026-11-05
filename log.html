@@ -175,7 +175,7 @@ const TFS = [
 ];
 const SHOWN = TFS.filter(t => t.show);
 const WINDOWS = [50, 100]; // "last N candles" analysis windows
-const HOSTS = ["https://api.binance.com", "https://data-api.binance.vision"];
+const HOSTS = ["https://api.binance.com", "https://data-api.binance.vision", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com"];
 const STABLE = new Set(["USDT","USDC","FDUSD","TUSD","DAI","USDE","PYUSD","USDP","BUSD","USD1","USDD","GUSD","EURC","EUR","AEUR","XUSD","RLUSD","BFUSD","USDS","WBTC","WBETH","STETH","WSTETH","WEETH","BETH","CBBTC"]);
 const FALLBACK = ["BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK","DOT","LTC","BCH","NEAR","UNI","ATOM","ETC","XLM","FIL","APT","ARB","OP","INJ","SUI","AAVE","HBAR","ICP","POL","TON","ALGO"];
 /* Sessions are defined in each city's own clock, so daylight saving is handled by the browser. */
@@ -334,7 +334,7 @@ async function fetchKlines(symbol, interval) {
       clearTimeout(to);
       if (!r.ok) throw new Error("HTTP " + r.status);
       const j = await r.json();
-      if (!Array.isArray(j) || j.length < 120) throw new Error("Not enough candles");
+      if (!Array.isArray(j) || j.length < 40) throw new Error("Not enough candles");
       return j.map(kline);
     } catch (e) { lastErr = e; }
   }
@@ -428,12 +428,16 @@ async function loadSymbol() {
     return false;
   }
   state.symbol = pair; store.set("symbol", pair);
-  try {
-    state.A = await fetchAll(pair, true);
-    state.demo = false; showBanner("");
-  } catch (e) {
-    state.A = demoAll(pair); state.demo = true;
-    showBanner("Could not load candles from Binance (" + (e && e.message ? e.message : "network error") + "). Showing made-up demo candles, not real prices. Check the pair name and your internet connection, then try again.");
+  /* Real Binance data only. Three tries, no made-up candles. */
+  let lastErr = null;
+  for (let k = 0; k < 3; k++) {
+    try { state.A = await fetchAll(pair, k === 0); state.Apair = pair; state.demo = false; showBanner(""); lastErr = null; break; }
+    catch (e) { lastErr = e; await sleep(900 * (k + 1)); }
+  }
+  if (lastErr) {
+    if (state.Apair !== pair) state.A = null;
+    showBanner("Could not load real candles for " + pair + " from Binance (" + (lastErr && lastErr.message ? lastErr.message : "network error") + "). No fake data is shown. Check the pair name and your internet connection, then press Analyze again.");
+    return false;
   }
   state.sig = buildSignal(state.A);
   state.sessStats = sessionStats(state.A["1h"].candles);
@@ -591,7 +595,7 @@ function wireSymbolBox(cfg) {
   const go = async () => {
     state.symbol = normalizePair($("sym").value); $("sym").value = state.symbol;
     $("go").disabled = true; $("go").textContent = "Loading...";
-    await loadSymbol(); cfg.render(); if (cfg.afterSymbol) cfg.afterSymbol();
+    await loadSymbol(); if (state.A && state.A["5m"]) { cfg.render(); if (cfg.afterSymbol) cfg.afterSymbol(); }
     $("go").disabled = false; $("go").textContent = "Analyze";
   };
   $("go").addEventListener("click", go);
@@ -619,6 +623,10 @@ async function boot(cfg) {
     await loadUniverse(); fillSymList(); $("capNote").textContent = state.capMsg || "";
     if (cfg.symbolBox) wireSymbolBox(cfg);
     await loadSymbol();
+  }
+  if (cfg.data && !(state.A && state.A["5m"])) {
+    $("main").innerHTML = '<div class="card"><h2>No real data yet</h2><p class="sub">Binance did not answer, so nothing is shown. This app never shows made-up prices. Check your internet (some networks or VPNs block Binance), then retry.</p><button id="retryLoad" class="primary">Retry</button></div>';
+    $("retryLoad").addEventListener("click", () => location.reload()); startTick(); return;
   }
   $("main").innerHTML = cfg.skeleton || "";
   if (cfg.init) cfg.init();
