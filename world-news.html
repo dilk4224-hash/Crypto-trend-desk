@@ -157,6 +157,8 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 
 .pill.dir { background: var(--fg); color: var(--bg); } .pill.ind { background: transparent; color: var(--muted); border: 1px solid var(--line); }
 
+.h3 { margin: 10px 0 4px; font-size: 14px; }
+
 </style>
 </head>
 <body data-page="world-news">
@@ -164,7 +166,6 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 <script>
 "use strict";
 /* Shared settings, storage and small helpers. Loaded first on every page. */
-const MIN_CAP = 50e6; // only coins with market cap above this are analysed
 /* Weekly is removed. Daily (show:false) is never displayed but is always used as background bias. */
 const TFS = [
   { id: "5m", name: "5 Min", ms: 300000, k: 3, show: true, tv: "5" },
@@ -204,7 +205,7 @@ function fp(x) {
   const a = Math.abs(x), d = a >= 1000 ? 2 : a >= 1 ? 3 : a >= 0.1 ? 4 : 6;
   return x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 }
-const fmtCap = x => x == null ? "n/a" : x >= 1e12 ? "$" + (x / 1e12).toFixed(2) + "T" : x >= 1e9 ? "$" + (x / 1e9).toFixed(1) + "B" : "$" + Math.round(x / 1e6) + "M";
+const fmtCap = x => x == null ? "n/a" : x >= 1e12 ? "$" + (x / 1e12).toFixed(2) + "T" : x >= 1e9 ? "$" + (x / 1e9).toFixed(1) + "B" : x >= 1e6 ? "$" + Math.round(x / 1e6) + "M" : "$" + Math.round(x / 1e3) + "K";
 const pc = (v, d) => v == null || !isFinite(v) ? "n/a" : '<span class="' + (v >= 0 ? "up-t" : "down-t") + '">' + (v >= 0 ? "+" : "") + v.toFixed(d == null ? 2 : d) + "%</span>";
 const hhmm = ms => new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 const dayTime = ms => new Date(ms).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -1252,7 +1253,7 @@ function trendlineCheck(A, L) {
 </script>
 <script>
 "use strict";
-/* Market data: Binance candles, CoinGecko market caps (coins above MIN_CAP only). */
+/* Market data: Binance candles and the Binance token list (all USDT tokens). */
 const CG = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false&page=";
 
 async function jget(path) {
@@ -1324,56 +1325,35 @@ function normalizePair(raw) {
   if (!s.endsWith("USDT")) s += "USDT";
   return s;
 }
+/* Every Binance USDT spot token with real trading volume (no market-cap filter). Sorted by 24h USDT volume. */
+const MIN_VOL = 300000;
 async function loadUniverse() {
   const setU = (list, verified, msg) => {
     state.uni = { list, map: Object.fromEntries(list.map(c => [c.pair, c])), verified };
     state.capMsg = msg;
   };
   try {
-    const cached = JSON.parse(store.get("uni", "null"));
-    if (cached && Date.now() - cached.t < 6 * 3600e3 && cached.list.length > 20) {
-      setU(cached.list, true, cached.list.length + " coins pass the filter: market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance (CoinGecko data, cached up to 6 hours).");
-      return;
-    }
+    const cached = JSON.parse(store.get("uni2", "null"));
+    if (cached && Date.now() - cached.t < 10 * 60000 && cached.list.length > 20) { setU(cached.list, true, cached.list.length + " Binance USDT tokens with trading volume (24h volume above $300K). Sorted by volume, cached up to 10 minutes."); return; }
   } catch (e) { /* ignore cache errors */ }
-  let usdt;
   try {
-    const prices = await jget("/api/v3/ticker/price");
-    usdt = new Set(prices.map(p => p.symbol).filter(s => s.endsWith("USDT")));
-  } catch (e) { usdt = null; }
-  try {
-    const seen = new Set(), list = [];
-    let rank = 0;
-    for (let page = 1; page <= 5; page++) {
-      const r = await fetch(CG + page);
-      if (!r.ok) throw new Error("CoinGecko HTTP " + r.status);
-      const j = await r.json();
-      if (!Array.isArray(j) || !j.length) break;
-      let below = false;
-      for (const c of j) {
-        rank++;
-        if (c.market_cap == null || c.market_cap < MIN_CAP) { below = true; continue; }
-        const sym = String(c.symbol).toUpperCase();
-        if (STABLE.has(sym) || seen.has(sym)) continue;
-        const pair = sym + "USDT";
-        if (usdt && !usdt.has(pair)) continue;
-        seen.add(sym); list.push({ sym, pair, name: c.name, mc: c.market_cap, rank: c.market_cap_rank || rank });
-      }
-      if (below) break;
-    }
-    if (list.length < 10) throw new Error("Too few coins returned");
-    store.set("uni", JSON.stringify({ t: Date.now(), list }));
-    setU(list, true, list.length + " coins pass the filter: market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance (CoinGecko data).");
+    const all = await jget("/api/v3/ticker/24hr");
+    const list = all.filter(t => /USDT$/.test(t.symbol) && +t.quoteVolume >= MIN_VOL).map(t => ({ sym: t.symbol.slice(0, -4), pair: t.symbol, name: t.symbol.slice(0, -4), mc: null, vol: +t.quoteVolume, chg: +t.priceChangePercent, last: +t.lastPrice }))
+      .filter(c => !STABLE.has(c.sym) && !/(UP|DOWN|BULL|BEAR)$/.test(c.sym) && c.sym.length >= 2).sort((x, y) => y.vol - x.vol);
+    list.forEach((c, i) => { c.rank = i + 1; });
+    if (list.length < 10) throw new Error("Too few tokens returned");
+    store.set("uni2", JSON.stringify({ t: Date.now(), list }));
+    setU(list, true, list.length + " Binance USDT tokens with trading volume (24h volume above $300K). Sorted by volume.");
   } catch (e) {
-    setU(FALLBACK.map((sym, i) => ({ sym, pair: sym + "USDT", name: sym, mc: null, rank: i + 1 })), false,
-      "Could not load market caps (" + (e && e.message ? e.message : "network error") + "). Using a built-in list of 30 large coins, all far above " + fmtCap(MIN_CAP) + ". Reload to try again.");
+    setU(FALLBACK.map((sym, i) => ({ sym, pair: sym + "USDT", name: sym, mc: null, vol: 0, rank: i + 1 })), false,
+      "Could not load the token list (" + (e && e.message ? e.message : "network error") + "). Using a built-in list of 30 large coins. Reload to try again.");
   }
 }
 /* Loads candles for state.symbol, runs the full analysis and builds the signal. Returns false if the coin is not allowed. */
 async function loadSymbol() {
   const pair = normalizePair(state.symbol);
   if (state.uni.verified && !state.uni.map[pair]) {
-    showBanner(coinOf(pair) + " is skipped. Only coins with market cap above " + fmtCap(MIN_CAP) + " and a USDT pair on Binance are analysed. Pick a coin from the list.");
+    showBanner(coinOf(pair) + " has no active USDT pair on Binance with enough volume. Pick a token from the list.");
     return false;
   }
   state.symbol = pair; store.set("symbol", pair);
@@ -2173,22 +2153,22 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && LI
 "use strict";
 /* Page frame shared by every page: title, menu, symbol box, banner, timers. Each page calls boot(). */
 const NAV = [["index.html", "Signals"], ["chart.html", "Chart"], ["analysis.html", "Analysis"], ["tradingview.html", "TradingView"], ["sessions.html", "Sessions"],
-  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["flow.html", "Money flow"], ["log.html", "Trade log"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
+  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["market.html", "Big money"], ["flow.html", "Money flow"], ["log.html", "Trade log"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
 
 function showBanner(msg) { const b = $("banner"); if (!b) return; b.hidden = !msg; b.textContent = msg; }
 function buildShell(cfg) {
   const nav = NAV.map(([href, label]) => '<a href="' + href + '"' + (href === cfg.file ? ' aria-current="page"' : '') + '>' + label + '</a>').join("");
   $("app").innerHTML = '<div class="wrap">' +
-    '<header class="top"><div><h1>Crypto Trend Desk <span id="liveBadge" class="pill mute" style="font-size:11px;vertical-align:middle"></span></h1><div class="sub" style="margin:0">Scalping and intraday desk for coins above $50M market cap</div></div>' +
+    '<header class="top"><div><h1>Crypto Trend Desk <span id="liveBadge" class="pill mute" style="font-size:11px;vertical-align:middle"></span></h1><div class="sub" style="margin:0">Live scalping and intraday desk for all Binance USDT tokens</div></div>' +
     (cfg.symbolBox ? '<div class="controls"><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
       '<button id="go" class="primary">Analyze</button><label class="chk"><input type="checkbox" id="auto"> Refresh every minute</label></div>' : '') +
     '</header><nav class="nav" aria-label="Pages">' + nav + '</nav><div id="banner" class="banner" hidden></div><div id="capNote" class="sub" style="margin:0"></div>' +
     '<main id="main" style="display:flex;flex-direction:column;gap:16px"></main>' +
-    '<footer>This tool applies fixed rules to public Binance candles, CoinGecko market caps and public news feeds. It does not predict the market and it is not financial advice. Test any idea on paper or with very small size first, and never risk money you cannot afford to lose.</footer></div>';
+    '<footer>This tool applies fixed rules to public Binance market data (candles, order books, trades, futures) and public news feeds. It does not predict the market and it is not financial advice. Test any idea on paper or with very small size first, and never risk money you cannot afford to lose.</footer></div>';
 }
 function fillSymList() {
   const dl = $("symlist"); if (!dl) return;
-  dl.innerHTML = state.uni.list.slice(0, 120).map(c => '<option value="' + c.pair + '" label="' + esc(c.name) + (c.mc ? " " + fmtCap(c.mc) : "") + '"></option>').join("");
+  dl.innerHTML = state.uni.list.slice(0, 400).map(c => '<option value="' + c.pair + '" label="' + esc(c.name) + (c.vol ? " vol " + fmtCap(c.vol) : "") + '"></option>').join("");
 }
 let autoTimer = null;
 function wireSymbolBox(cfg) {
