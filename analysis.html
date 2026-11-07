@@ -2587,9 +2587,9 @@ function renderExchange(id) {
 "use strict";
 /* Analysis page: market structure, the last 50 and 100 candles, retracement zones, breaks and retests, candle read and patterns. */
 const ANALYSIS_SKELETON =
-  '<section class="card" id="structCard"></section><section class="card" id="lastNCard"></section>' +
+  '<section class="card" id="structCard"></section>' +
   '<div class="status-row"><h2 style="margin:0">Detail for one timeframe</h2><div class="tabs" id="tfTabs" role="group" aria-label="Timeframe"></div></div>' +
-  '<div class="grid"><section class="card" id="retCard"></section><section class="card" id="brkCard"></section></div>' +
+  '<section class="card" id="brkCard"></section>' +
   '<section class="card" id="candleCard"></section><section class="card" id="patCard"></section>' +
   '<section class="card" id="tlCard"></section><section class="card" id="klCard"></section><section class="card" id="obCard"></section>' +
   '<div class="grid"><section class="card" id="evCard"></section><section class="card" id="liqCard"></section></div><section class="card" id="cpCard"></section>';
@@ -2606,35 +2606,6 @@ function renderStruct() {
     }).join("") + '</tbody></table></div>' +
     '<div class="note">The daily chart is also read in the background for the signal bias, but it is not shown here.</div>';
 }
-function renderLastN() {
-  const rows = [];
-  SHOWN.forEach(t => WINDOWS.forEach(N => {
-    const r = lastN(state.A[t.id], N);
-    rows.push('<tr><td><b>' + t.name + '</b></td><td class="num">' + r.N + '</td><td><span class="pill ' + (r.bias === "up" ? "up" : r.bias === "down" ? "down" : "mute") + '">' + r.label.toUpperCase() + '</span> <span class="mute-t mono">' + (r.score > 0 ? "+" : "") + r.score + '/7</span></td>' +
-      '<td class="num">' + pc(r.net) + '</td><td class="num">' + r.bull + ' / ' + r.bear + '</td><td class="num">' + Math.round(r.pctAbove * 100) + '%</td>' +
-      '<td class="num"><span class="up-t">' + (r.cnt.HH + r.cnt.HL) + '</span> / <span class="down-t">' + (r.cnt.LH + r.cnt.LL) + '</span></td>' +
-      '<td class="num">' + (r.volRatio == null ? "n/a" : r.volRatio.toFixed(2) + "x") + '</td><td class="num">' + Math.round(r.pos * 100) + '%</td><td class="num"><span class="up-t">' + r.bp + '</span> / <span class="down-t">' + r.brp + '</span></td><td class="num">' + r.widthPct.toFixed(2) + '%</td></tr>');
-  }));
-  $("lastNCard").innerHTML = '<div class="status-row"><h2 style="margin:0">Last 50 and last 100 candles</h2><span class="sub" style="margin:0">Closed candles only</span></div>' +
-    '<div class="tbl"><table><thead><tr><th>Timeframe</th><th>Candles</th><th>Read</th><th>Net move</th><th>Green / red</th><th>Closed above EMA 20</th><th title="Higher swings (HH + HL) / lower swings (LH + LL)">Higher / lower swings</th><th title="Average volume of the last 10 candles vs the earlier ones">Volume trend</th><th title="Where price sits between the low and high of the window">Position in range</th><th title="Strong bullish / bearish candle patterns found">Patterns up / down</th><th>Range width</th></tr></thead><tbody>' + rows.join("") + '</tbody></table></div>' +
-    '<div class="note">Read = a score from 7 checks: net move, closes above EMA 20, higher vs lower swings, green vs red candles, position in the range, slope, and candle patterns. +3 or more is Bullish, -3 or less is Bearish, anything between is a Range. The signal on the Signals page uses the 15m last 50, the 15m last 100 and the 1H last 50.</div>';
-}
-function renderRetrace() {
-  const a = state.A[state.chartTf], r = retraceInfo(a), price = a.candles[a.candles.length - 1].c;
-  let h = '<h2>Retracement · ' + a.tf.name + '</h2>';
-  if (!r) { $("retCard").innerHTML = h + '<div class="sub">Not enough swings yet to measure a leg.</div>'; return; }
-  const dirTxt = r.dir === "up" ? "up (a pullback would be down)" : "down (a pullback would be up)";
-  h += '<div class="kv"><span>Latest leg</span><span class="mono">' + fp(r.from.p) + RM(' to ', ' se ') + fp(r.to.p) + ', ' + (r.dir === "up" ? RM("up", "upar") : RM("down", "neeche")) + '</span></div>' +
-    '<div class="kv"><span>Retraced so far</span><span class="mono ' + (r.invalid ? "down-t" : "") + '">' + (r.depthNow * 100).toFixed(0) + '%' + (r.invalid ? " (leg fully reversed)" : r.depthNow < 0 ? " (new leg started)" : "") + '</span></div>' +
-    '<div class="kv"><span>Typical pullback depth (last ' + r.usedWin + ' candles)</span><span class="mono">' + (r.avgDepth == null ? "not enough pullbacks" : (r.avgDepth * 100).toFixed(0) + RM("% of the leg, ", "% leg ka, ") + r.nLegs + RM(" pullbacks", " pullbacks")) + '</span></div>' +
-    (r.typicalP != null ? '<div class="kv"><span>Where that would end</span><span class="mono">' + fp(r.typicalP) + ' (' + (100 * (r.typicalP / price - 1)).toFixed(2) + '%)</span></div>' : '') +
-    '<div class="kv"><span>Pullback zone (38.2% to 61.8%)</span><span class="mono">' + fp(r.golden[0]) + RM(' to ', ' se ') + fp(r.golden[1]) + (r.inGolden ? ' <span class="pill up">PRICE IS INSIDE</span>' : '') + '</span></div>' +
-    '<div class="tbl" style="margin-top:8px"><table style="min-width:0"><thead><tr><th>Level</th><th>Price</th><th>From price</th></tr></thead><tbody>' +
-    r.levels.map(L => '<tr><td>' + (L.f * 100).toFixed(1) + '%</td><td class="num">' + fp(L.p) + '</td><td class="num">' + pc(100 * (L.p / price - 1)) + '</td></tr>').join("") + '</tbody></table></div>' +
-    (r.conf.length ? '<div class="note"><b>Confluence:</b> ' + esc(r.conf.join(". ")) + '.</div>' : '<div class="note">No EMA or support/resistance zone lines up with the main retracement levels right now.</div>') +
-    '<div class="note">Leg direction: ' + dirTxt + '. A pullback into the zone with a confirming candle is the pullback entry used on the Signals page. If price closes beyond the start of the leg, the idea is invalid.</div>';
-  $("retCard").innerHTML = h;
-}
 const BRK_TEXT = (e, atr) => {
   const up = e.dir === "up", lvl = fp(e.p);
   if (e.type === "trap") return "False break. Price broke " + (e.from === "up" ? "above" : "below") + " " + lvl + " and closed straight back. Trade the " + (up ? "long" : "short") + " side, stop beyond " + fp(e.edge) + ".";
@@ -2645,7 +2616,7 @@ const BRK_TEXT = (e, atr) => {
 };
 function renderBreaks() {
   const a = state.A[state.chartTf], list = detectBreaks(a), atr = a.atr[a.candles.length - 2];
-  $("brkCard").innerHTML = '<h2>Breaks and retests · ' + a.tf.name + '</h2>' + (list.length ? '<div class="tbl"><table><thead><tr><th>Level</th><th>Move</th><th>Candles ago</th><th>Status</th><th>Volume</th><th>What to do</th></tr></thead><tbody>' +
+  $("brkCard").innerHTML = '<h2>Breaks and retests · ' + a.tf.name + '</h2>' + (list.length ? '<div class="tbl"><table><thead><tr><th>Level</th><th>Move</th><th>Candles ago</th><th>Status</th><th>What to do</th></tr></thead><tbody>' +
     list.map(e => '<tr><td class="num">' + fp(e.p) + ' <span class="mute-t">x' + e.n + '</span></td><td>' + (e.type === "trap" ? '<span class="pill warn">FALSE BREAK</span>' : '<span class="pill ' + (e.dir === "up" ? "up" : "down") + '">BREAK ' + (e.dir === "up" ? "UP" : "DOWN") + '</span>') + '</td>' +
       '<td class="num">' + e.age + '</td><td>' + esc(e.status) + '</td><td class="num">' + (e.vol == null ? "n/a" : e.vol.toFixed(1) + "x") + '</td><td class="wrapc">' + esc(BRK_TEXT(e, atr)) + '</td></tr>').join("") + '</tbody></table></div>' :
     '<div class="sub">No support or resistance zone broke in the last 45 candles on this timeframe.</div>') +
@@ -2655,12 +2626,12 @@ function renderCandleRead() {
   const fmtT = (tf, t) => new Date(t).toLocaleString(undefined, tf === "1h" || tf === "4h" || tf === "15m" || tf === "5m" ? { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short" });
   const block = id => {
     const a = state.A[id];
-    return '<h3>' + a.tf.name + ' · last 4 closed candles</h3><div class="tbl"><table><thead><tr><th>Candle</th><th>Colour</th><th>Size</th><th>Body</th><th>Upper wick</th><th>Lower wick</th><th>Volume</th><th>Read</th></tr></thead><tbody>' +
+    return '<h3>' + a.tf.name + ' · last 4 closed candles</h3><div class="tbl"><table><thead><tr><th>Candle</th><th>Colour</th><th>Size</th><th>Body</th><th>Upper wick</th><th>Lower wick</th><th>Read</th></tr></thead><tbody>' +
       candleReport(a, 4).map((r, j) => '<tr><td>' + (j === 0 ? RM("Last closed", "Aakhri band") : j + RM(" before", " pehle")) + ' <span class="mute-t">' + esc(fmtT(id, r.t)) + '</span></td><td class="' + (r.colour === "Green" ? "up-t" : r.colour === "Red" ? "down-t" : "mute-t") + '">' + r.colour + '</td><td>' + r.size + '</td>' +
-        '<td class="num">' + r.bodyPct + '%</td><td class="num">' + r.upPct + '%</td><td class="num">' + r.lowPct + '%</td><td class="num">' + (r.vol == null ? "n/a" : r.vol.toFixed(2) + "x") + '</td>' +
+        '<td class="num">' + r.bodyPct + '%</td><td class="num">' + r.upPct + '%</td><td class="num">' + r.lowPct + '%</td>' +
         '<td class="wrapc">' + esc([r.note].concat(r.pats.map(p => p.name + " (" + p.bias + ")")).filter(Boolean).join("; ") || "-") + '</td></tr>').join("") + '</tbody></table></div>';
   };
-  $("candleCard").innerHTML = '<div class="status-row"><h2 style="margin:0">Candle read (used for the signal)</h2><span class="sub" style="margin:0">Body, wick and volume are shown as a share of the candle range and of the 20-candle average volume.</span></div>' + block("5m") + '<div style="height:12px"></div>' + block("15m");
+  $("candleCard").innerHTML = '<div class="status-row"><h2 style="margin:0">Candle read (used for the signal)</h2><span class="sub" style="margin:0">Body and wick are shown as a share of the candle range.</span></div>' + block("5m") + '<div style="height:12px"></div>' + block("15m");
 }
 function renderPatterns() {
   const dots = n => "●".repeat(n) + "○".repeat(3 - n);
@@ -2684,7 +2655,7 @@ function renderPatterns() {
 function tfTabs2() {
   const el = $("tfTabs");
   el.innerHTML = SHOWN.map(t => '<button data-tf="' + t.id + '" aria-pressed="' + (t.id === state.chartTf) + '">' + t.name + '</button>').join("");
-  el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.chartTf = b.dataset.tf; store.set("chartTf", state.chartTf); tfTabs2(); renderRetrace(); renderBreaks(); renderEvents(); renderLiquidity(); romanize($("main")); }));
+  el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.chartTf = b.dataset.tf; store.set("chartTf", state.chartTf); tfTabs2(); renderBreaks(); renderEvents(); renderLiquidity(); romanize($("main")); }));
 }
 
 const READ_TXT = { reversal: ["REVERSAL", "warn"], break: ["TREND BREAK", "up"], trap: ["FALSE BREAK", "warn"], testing: ["TESTING", "mute"], none: ["NOT AT LEVEL", "mute"] };
@@ -2745,7 +2716,7 @@ function renderChartPatterns() {
     (body || '<tr><td colspan="9" class="mute-t">No chart pattern found on 5m, 15m, 1H or 4H right now.</td></tr>') + '</tbody></table></div>' +
     '<div class="note">Entry level = neckline or trendline. Enter after a candle closes beyond it (confirmed), ideally on the retest. Target = the height of the pattern measured from the entry level. Patterns are rough shapes found from swing points, so always check them on the chart.</div>';
 }
-function renderAnalysis() { setTimeout(() => romanize($("main")), 0); renderStruct(); renderLastN(); tfTabs2(); renderRetrace(); renderBreaks(); renderCandleRead(); renderPatterns(); renderKeyLevels(); renderTrend(); renderOB(); renderEvents(); renderLiquidity(); renderChartPatterns(); }
+function renderAnalysis() { setTimeout(() => romanize($("main")), 0); renderStruct(); tfTabs2(); renderBreaks(); renderCandleRead(); renderPatterns(); renderKeyLevels(); renderTrend(); renderOB(); renderEvents(); renderLiquidity(); renderChartPatterns(); }
 boot({ file: "analysis.html", title: "Analysis", data: true, symbolBox: true, skeleton: ANALYSIS_SKELETON, render: renderAnalysis });
 
 </script>

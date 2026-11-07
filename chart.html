@@ -2261,7 +2261,7 @@ function renderExchange(id) {
 "use strict";
 /* Chart page: candles with EMAs, swing structure (HH, HL, LH, LL), support and resistance, breaks and retests,
    retracement levels, candle patterns, and shading for the last 50 and 100 candles. Drawn on a canvas. */
-const TOGGLES = [["tTl", "Trendlines + order blocks"], ["tStruct", "HH / HL / LH / LL"], ["tSR", "Support and resistance"], ["tBrk", "Breaks and retests"], ["tFib", "Retracement"], ["tPat", "Candle patterns"], ["tWin", "Last 50 / 100 shading"], ["tHtf", "4H / 1H levels"], ["tOB", "Order blocks"], ["tBos", "BOS / CHoCH"], ["tLiq", "Liquidity"], ["tCp", "Chart patterns"]];
+const TOGGLES = [["tTl", "Trendlines + order blocks"], ["tStruct", "HH / HL / LH / LL"], ["tSR", "Support and resistance"], ["tBrk", "Breaks and retests"], ["tPat", "Candle patterns"], ["tHtf", "4H / 1H levels"], ["tOB", "Order blocks"], ["tBos", "BOS / CHoCH"], ["tLiq", "Liquidity"], ["tCp", "Chart patterns"]];
 const CHART_SKELETON =
   '<section class="card"><div class="status-row"><h2 style="margin:0">Chart · <span id="chartSym"></span></h2><div id="chartInfo" class="sub" style="margin:0"></div></div>' +
   '<div class="status-row"><div class="tabs" id="tfTabs" role="group" aria-label="Chart timeframe"></div><div class="controls" id="toggles"></div></div>' +
@@ -2307,7 +2307,7 @@ function drawChart() {
   if (sv < 25) loadOlder(state.chartTf);
   const cUp = css("--up"), cDown = css("--down"), cGrid = css("--line"), cTxt = css("--muted"), cAcc = css("--accent"), cSurf = css("--surface"), cFg = css("--fg"), mono = css("--font-mono");
   const P = setupCanvas($("cv"), chartH()), ctx = P.ctx;
-  const padR = 74, padT = 16, padB = 22, plotW = P.w - padR, plotH = P.h - padT - padB, volH = plotH * 0.14, priceH = plotH - volH - 6;
+  const padR = 74, padT = 16, padB = 22, plotW = P.w - padR, plotH = P.h - padT - padB, volH = 0, priceH = plotH;
   let lo = Infinity, hi = -Infinity;
   cs.forEach((k, j) => {
     lo = Math.min(lo, k.l); hi = Math.max(hi, k.h);
@@ -2317,14 +2317,6 @@ function drawChart() {
   const y = v => padT + (hi - v) / (hi - lo) * priceH, x = j => (j + s0 - sv + 0.5) / N * plotW, xi = i => (i - sv + 0.5) / N * plotW, cw = Math.max(1, plotW / N * 0.66), colW = plotW / N;
   ctx.clearRect(0, 0, P.w, P.h); ctx.font = "11px " + mono;
 
-  /* last 100 and last 50 candle shading */
-  if (T("tWin")) {
-    [[100, 0.05, "last 100"], [50, 0.07, "last 50"]].forEach(([w, al, lab], q) => {
-      const x0 = Math.max(0, xi(n - 1 - w) - colW / 2); if (x0 >= plotW) return;
-      ctx.globalAlpha = al; ctx.fillStyle = cFg; ctx.fillRect(x0, padT, plotW - x0, priceH); ctx.globalAlpha = 1;
-      ctx.fillStyle = cTxt; ctx.textAlign = "left"; ctx.fillText(lab, x0 + 4, padT + 10 + q * 12);
-    });
-  }
   ctx.strokeStyle = cGrid; ctx.lineWidth = 1; ctx.fillStyle = cTxt;
   for (let g = 0; g <= 5; g++) {
     const v = lo + (hi - lo) * g / 5, yy = Math.round(y(v)) + 0.5;
@@ -2335,7 +2327,6 @@ function drawChart() {
   const maxV = Math.max(...cs.map(k => k.v)) || 1;
   cs.forEach((k, j) => {
     const col = k.c >= k.o ? cUp : cDown; ctx.fillStyle = col; ctx.strokeStyle = col;
-    ctx.globalAlpha = 0.28; const vh = k.v / maxV * volH; ctx.fillRect(x(j) - cw / 2, padT + priceH + 6 + volH - vh, cw, vh); ctx.globalAlpha = 1;
     ctx.beginPath(); ctx.moveTo(Math.round(x(j)) + 0.5, y(k.h)); ctx.lineTo(Math.round(x(j)) + 0.5, y(k.l)); ctx.stroke();
     ctx.fillRect(x(j) - cw / 2, y(Math.max(k.o, k.c)), cw, Math.max(1, Math.abs(y(k.o) - y(k.c))));
   });
@@ -2348,26 +2339,6 @@ function drawChart() {
   ctx.restore();
 
   const breaks = detectBreaks(a), brkLevels = breaks.map(e => e.p), atr = a.atr[end] || (hi - lo) * 0.01;
-  /* retracement of the latest leg */
-  const ret = retraceInfo(a);
-  if (T("tFib") && ret) {
-    const xTo = ret.to.i >= s0 ? xi(ret.to.i) : 0;
-    ctx.globalAlpha = 0.1; ctx.fillStyle = cAcc; ctx.fillRect(xTo, y(ret.golden[1]), plotW - xTo, y(ret.golden[0]) - y(ret.golden[1])); ctx.globalAlpha = 1;
-    ctx.lineWidth = 1; ctx.strokeStyle = cAcc; ctx.setLineDash([2, 3]);
-    ret.levels.forEach(L => {
-      if (L.p < lo || L.p > hi) return;
-      ctx.beginPath(); ctx.moveTo(xTo, Math.round(y(L.p)) + 0.5); ctx.lineTo(plotW, Math.round(y(L.p)) + 0.5); ctx.stroke();
-      tagText(ctx, (L.f * 100).toFixed(1) + "% " + fp(L.p), plotW - 4, y(L.p) - 3, cAcc, cSurf, "right");
-    });
-    ctx.setLineDash([]);
-    if (ret.from.i >= s0 || ret.to.i >= s0) {
-      ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(xi(ret.from.i), y(ret.from.p)); ctx.lineTo(xi(ret.to.i), y(ret.to.p)); ctx.stroke(); ctx.setLineDash([]);
-    }
-    if (ret.typicalP != null && ret.typicalP >= lo && ret.typicalP <= hi) {
-      ctx.setLineDash([1, 4]); ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(xTo, y(ret.typicalP)); ctx.lineTo(plotW, y(ret.typicalP)); ctx.stroke(); ctx.setLineDash([]);
-      tagText(ctx, "typical pullback end " + fp(ret.typicalP), 8, y(ret.typicalP) + 12, cAcc, cSurf, "left");
-    }
-  }
   /* support and resistance zones */
   const L = levelsNear(a);
   if (T("tSR")) {
@@ -2559,7 +2530,6 @@ function drawChart() {
   const chips = [];
   L.res.slice().reverse().forEach(z => chips.push('<span class="chip r">R ' + fp(z.p) + ' x' + z.n + ' (' + (100 * (z.p / price - 1)).toFixed(2) + '%)</span>'));
   L.sup.forEach(z => chips.push('<span class="chip s">S ' + fp(z.p) + ' x' + z.n + ' (' + (100 * (z.p / price - 1)).toFixed(2) + '%)</span>'));
-  if (ret) chips.push('<span class="chip n">Pullback zone ' + fp(ret.golden[0]) + ' to ' + fp(ret.golden[1]) + (ret.inGolden ? ' (price is inside)' : '') + '</span>');
   const klv = keyLevels(state.A).filter(z => z.tf !== state.chartTf);
   klv.filter(z => z.side === "R").sort((p, q) => q.p - p.p).forEach(z => chips.unshift('<span class="chip r">' + tfl(z.tf) + ' R ' + fp(z.p) + ' x' + z.n + '</span>'));
   klv.filter(z => z.side === "S").sort((p, q) => q.p - p.p).forEach(z => chips.push('<span class="chip s">' + tfl(z.tf) + ' S ' + fp(z.p) + ' x' + z.n + '</span>'));
@@ -2604,7 +2574,7 @@ function drawCross() {
   if (k) {
     tagText(ctx, new Date(k.t).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }), Math.min(vg.plotW - 4, Math.max(60, c.x)), vg.H - 6, fg, surf, "center");
     const ch = 100 * (k.c / k.o - 1);
-    tagText(ctx, "O " + fp(k.o) + "  H " + fp(k.h) + "  L " + fp(k.l) + "  C " + fp(k.c) + "  " + (ch >= 0 ? "+" : "") + ch.toFixed(2) + "%  Vol " + (k.v >= 1e6 ? (k.v / 1e6).toFixed(2) + "M" : k.v >= 1e3 ? (k.v / 1e3).toFixed(1) + "K" : k.v.toFixed(1)), 6, vg.padT + 12, fg, surf, "left");
+    tagText(ctx, "O " + fp(k.o) + "  H " + fp(k.h) + "  L " + fp(k.l) + "  C " + fp(k.c) + "  " + (ch >= 0 ? "+" : "") + ch.toFixed(2) + "%", 6, vg.padT + 12, fg, surf, "left");
   }
 }
 function setupMove() {
