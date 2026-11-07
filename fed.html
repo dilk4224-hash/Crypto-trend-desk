@@ -159,12 +159,20 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 
 .h3 { margin: 10px 0 4px; font-size: 14px; }
 
+.confbanner { padding: 10px 12px; margin: 6px 0; border-radius: 8px; font-weight: 700; text-align: center; color: #fff; cursor: pointer; animation: cblink 0.9s steps(2, start) infinite; }
+.confbanner.up { background: var(--up); } .confbanner.down { background: var(--down); }
+@keyframes cblink { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .confbanner { animation: none; } }
+
 </style>
 </head>
 <body data-page="fed">
 <div id="app"></div>
 <script>
 "use strict";
+/* Roman Urdu text on the Analysis page only. RM(english, romanUrdu) gives the Roman Urdu version there and English everywhere else. */
+const ROMAN = /analysis/i.test(location.pathname.split("/").pop() || "");
+const RM = (en, ur) => ROMAN ? ur : en;
 /* Shared settings, storage and small helpers. Loaded first on every page. */
 /* Weekly is removed. Daily (show:false) is never displayed but is always used as background bias. */
 const TFS = [
@@ -494,8 +502,9 @@ function lastN(a, N) {
   sc += bp - brp >= 1 ? 1 : brp - bp >= 1 ? -1 : 0;
   const bias = sc >= 3 ? "up" : sc <= -3 ? "down" : "range";
   const label = bias === "up" ? "Bullish" : bias === "down" ? "Bearish" : "Range";
-  const text = label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + (net >= 0 ? "+" : "") + net.toFixed(2) + "% over " + m + " candles, " + Math.round(pctAbove * 100) + "% closed above EMA 20, " +
-    (cnt.HH + cnt.HL) + " higher swings vs " + (cnt.LH + cnt.LL) + " lower swings";
+  const text = RM(label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + (net >= 0 ? "+" : "") + net.toFixed(2) + "% over " + m + " candles, " + Math.round(pctAbove * 100) + "% closed above EMA 20, " +
+    (cnt.HH + cnt.HL) + " higher swings vs " + (cnt.LH + cnt.LL) + " lower swings", label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + m + " candles mein " + (net >= 0 ? "+" : "") + net.toFixed(2) + "%, " + Math.round(pctAbove * 100) + "% EMA 20 ke upar close, " +
+    (cnt.HH + cnt.HL) + " ooncha swings aur " + (cnt.LH + cnt.LL) + " neecha swings");
   return (a._n[N] = { N: m, start, end, net, netATR, bull, bear, pctAbove, volRatio, cnt, pos, hi, lo, slopeATR, bp, brp, score: sc, bias, label, text, widthPct: (hi - lo) / ((hi + lo) / 2) * 100 });
 }
 
@@ -604,8 +613,8 @@ function retraceInfo(a) {
       const conf = [];
       const zs = zonesOf(a).zones.filter(z => z.n >= 2);
       levels.slice(0, 3).forEach(L => {
-        [["EMA 20", a.ema20[end]], ["EMA 50", a.ema50[end]]].forEach(([nm, v]) => { if (v != null && Math.abs(v - L.p) <= 0.3 * atr) conf.push(nm + " sits at the " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ")"); });
-        zs.forEach(z => { if (Math.abs(z.p - L.p) <= 0.3 * atr) conf.push("support/resistance zone " + fp(z.p) + " (x" + z.n + ") sits at the " + (L.f * 100).toFixed(1) + "% level"); });
+        [["EMA 20", a.ema20[end]], ["EMA 50", a.ema50[end]]].forEach(([nm, v]) => { if (v != null && Math.abs(v - L.p) <= 0.3 * atr) conf.push(RM(nm + " sits at the " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ")", nm + " " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ") par hai")); });
+        zs.forEach(z => { if (Math.abs(z.p - L.p) <= 0.3 * atr) conf.push(RM("support/resistance zone " + fp(z.p) + " (x" + z.n + ") sits at the " + (L.f * 100).toFixed(1) + "% level", "support/resistance zone " + fp(z.p) + " (x" + z.n + ") " + (L.f * 100).toFixed(1) + "% level par hai")); });
       });
       res = { dir, from, to, R, levels, golden: [gLo, gHi], depthNow, inGolden, invalid: depthNow > 1, avgDepth, nLegs: ds.length, usedWin, typicalP: avgDepth == null ? null : lv(avgDepth), conf };
     }
@@ -832,8 +841,8 @@ function liquidityOf(a) {
     const ch = structureEvents(a).find(e => e.kind === "CHoCH" && e.dir === dir && e.i > sw0.sweepI && e.i - sw0.sweepI <= 20);
     const ob = ch ? orderBlocksOf(a).find(o => o.kind === "ob" && o.valid && o.bias === (dir === "up" ? "bull" : "bear") && o.evI === ch.i) : null;
     model = { dir, sweep: sw0, choch: ch || null, ob: ob || null,
-      stage: ch ? "Sweep and CHoCH done. Wait for a pullback into the " + (ob ? "order block " + fp(ob.lo) + " to " + fp(ob.hi) : "order block or imbalance") + ", then enter " + (dir === "up" ? "long" : "short") + "."
-        : (sw0.side === "sell" ? "Sell-side liquidity at " : "Buy-side liquidity at ") + fp(sw0.p) + " was swept. Wait for a CHoCH " + (dir === "up" ? "up" : "down") + " before entering." };
+      stage: ch ? RM("Sweep and CHoCH done. Wait for a pullback into the " + (ob ? "order block " + fp(ob.lo) + " to " + fp(ob.hi) : "order block or imbalance") + ", then enter " + (dir === "up" ? "long" : "short") + ".", "Sweep aur CHoCH ho chuke. " + (ob ? "Order block " + fp(ob.lo) + " se " + fp(ob.hi) : "Order block ya imbalance") + " mein pullback ka intezar karein, phir " + (dir === "up" ? "long" : "short") + " entry lein.")
+        : RM((sw0.side === "sell" ? "Sell-side liquidity at " : "Buy-side liquidity at ") + fp(sw0.p) + " was swept. Wait for a CHoCH " + (dir === "up" ? "up" : "down") + " before entering.", (sw0.side === "sell" ? "Sell-side" : "Buy-side") + " liquidity " + fp(sw0.p) + " par sweep ho gayi. Entry se pehle " + (dir === "up" ? "upar" : "neeche") + " CHoCH ka intezar karein.") };
   }
   return (a._liq = { pools, live, sweeps, trend, model });
 }
@@ -860,7 +869,7 @@ function levelConfirm(A) {
     const base = { tf: L.tf, confTf: ct, p: L.p, n: L.n, side: L.side, dist: (L.p - price) / price * 100, read: "none", dir: null, strength: null, pats: [], text: "", age: null };
     const touchIdx = []; for (let q = e - 2; q <= e; q++) if (c[q].l <= L.p + tol && c[q].h >= L.p - tol) touchIdx.push(q);
     const crossed = [e - 2, e - 1, e].some(q => c[q].c > L.p + 0.15 * atrC) && [e - 2, e - 1, e].some(q => c[q].c < L.p - 0.15 * atrC);
-    if (!touchIdx.length && !crossed) { base.text = name + ": price is " + Math.abs(base.dist).toFixed(2) + "% away. Waiting for it to reach the level."; res.push(base); return; }
+    if (!touchIdx.length && !crossed) { base.text = RM(name + ": price is " + Math.abs(base.dist).toFixed(2) + "% away. Waiting for it to reach the level.", name + ": price level se " + Math.abs(base.dist).toFixed(2) + "% door hai. Level tak pohnchne ka intezar."); res.push(base); return; }
     const fromBelow = c[e - 3].c < L.p, volOf = q => C.volSma[q] ? c[q].v / C.volSma[q] : null;
     const bodyPct = q => { const P = candleParts(c[q]); return P.range ? P.body / P.range : 0; };
     const patsAt = (q, bias) => detectPatterns(C, q).filter(p => p.bias === bias && p.str >= 2).map(p => p.name);
@@ -874,12 +883,12 @@ function levelConfirm(A) {
       const backNow = fromBelow ? c[e].c < L.p : c[e].c > L.p;
       if (backNow) {
         res.push({ ...base, read: "trap", dir: fromBelow ? "down" : "up", strength: bodyPct(e) >= 0.4 ? "confirmed" : "early", pats: patsAt(e, bias), age: e - first,
-          text: name + ": false break. Price closed " + (fromBelow ? "above" : "below") + " it on the " + tfl(ct) + " chart and then back " + (fromBelow ? "below" : "above") + ". Reversal " + (fromBelow ? "down" : "up") + " is likely." });
+          text: RM(name + ": false break. Price closed " + (fromBelow ? "above" : "below") + " it on the " + tfl(ct) + " chart and then back " + (fromBelow ? "below" : "above") + ". Reversal " + (fromBelow ? "down" : "up") + " is likely.", name + ": jhoota break. Price " + tfl(ct) + " chart par level ke " + (fromBelow ? "upar" : "neeche") + " close hui aur phir wapas " + (fromBelow ? "neeche" : "upar") + " aa gayi. " + (fromBelow ? "Neeche" : "Upar") + " ka reversal mumkin hai.") });
       } else {
         const held = last === e && e - first >= 1 && (fromBelow ? c[e].l >= L.p - tol : c[e].h <= L.p + tol);
         const v = volOf(first), strong = (v != null && v >= 1.2) || bodyPct(first) >= 0.6;
         res.push({ ...base, read: "break", dir: fromBelow ? "up" : "down", strength: held ? "confirmed" : "early", pats: [], age: e - first,
-          text: name + ": TREND BREAK " + (fromBelow ? "up" : "down") + ". " + closesBeyond.length + " closed " + tfl(ct) + " candle" + (closesBeyond.length > 1 ? "s" : "") + " beyond it" + (strong ? " (strong candle / volume)" : "") + (held ? ", and it is holding. " : ". Wait for the next candle to hold. ") + "Best entry is the retest of " + fp(L.p) + "." });
+          text: RM(name + ": TREND BREAK " + (fromBelow ? "up" : "down") + ". " + closesBeyond.length + " closed " + tfl(ct) + " candle" + (closesBeyond.length > 1 ? "s" : "") + " beyond it" + (strong ? " (strong candle / volume)" : "") + (held ? ", and it is holding. " : ". Wait for the next candle to hold. ") + "Best entry is the retest of " + fp(L.p) + ".", name + ": TREND BREAK " + (fromBelow ? "upar" : "neeche") + ". " + closesBeyond.length + " band " + tfl(ct) + " candle(s) level ke paar" + (strong ? " (mazboot candle / volume)" : "") + (held ? ", aur tiki hui hain. " : ". Agli candle ke tikne ka intezar karein. ") + "Behtareen entry " + fp(L.p) + " ka retest hai.") });
       }
       return;
     }
@@ -895,9 +904,9 @@ function levelConfirm(A) {
     if (best) {
       const fresh = best.q >= e - 1;
       res.push({ ...base, read: "reversal", dir: fromBelow ? "down" : "up", strength: fresh && (best.pats.length || best.wick >= 0.5) ? "confirmed" : "early", pats: best.pats, age: e - best.q,
-        text: name + ": REVERSAL " + (fromBelow ? "down" : "up") + ". " + tfl(ct) + " candle rejected the level" + (best.wick >= 0.4 ? " with a " + Math.round(best.wick * 100) + "% " + (fromBelow ? "upper" : "lower") + " wick" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + "." });
+        text: RM(name + ": REVERSAL " + (fromBelow ? "down" : "up") + ". " + tfl(ct) + " candle rejected the level" + (best.wick >= 0.4 ? " with a " + Math.round(best.wick * 100) + "% " + (fromBelow ? "upper" : "lower") + " wick" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + ".", name + ": REVERSAL " + (fromBelow ? "neeche" : "upar") + ". " + tfl(ct) + " candle ne level ko radd kiya" + (best.wick >= 0.4 ? " (" + Math.round(best.wick * 100) + "% " + (fromBelow ? "upar" : "neeche") + " wali wick ke saath)" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + ".") });
     } else {
-      res.push({ ...base, read: "testing", dir: null, strength: null, text: name + ": price is testing the level. No rejection and no close beyond it yet on the " + tfl(ct) + " chart. Wait." });
+      res.push({ ...base, read: "testing", dir: null, strength: null, text: RM(name + ": price is testing the level. No rejection and no close beyond it yet on the " + tfl(ct) + " chart. Wait.", name + ": price level ko test kar rahi hai. " + tfl(ct) + " chart par abhi na rejection hai na level ke paar close. Intezar karein.") });
     }
   });
   const rank = r => (r.read === "none" ? 3 : r.read === "testing" ? 2 : r.strength === "confirmed" ? 0 : 1);
@@ -1160,7 +1169,7 @@ function trendlinesOf(a) {
     L.near = Math.abs(price - L.nowP) <= 0.6 * atr;
     L.brk = L.brkI != null ? tlBreakCheck(a, L) : null;
     L.status = L.brk ? L.brk.status : "intact";
-    L.name = L.up ? "Rising support line" : "Falling resistance line";
+    L.name = L.up ? RM("Rising support line", "Barhti hui support line") : RM("Falling resistance line", "Girti hui resistance line");
   });
   return (a._tl = out);
 }
@@ -1190,13 +1199,13 @@ function tlBreakCheck(a, L) {
   }
   const age = end - b0;
   let status, text;
-  const parts = [(best.candleOk ? "strong candle" : "weak candle") + " (closed " + best.beyond.toFixed(2) + " ATR beyond, body " + Math.round(best.body * 100) + "%)",
-    (best.volOk ? "volume " + best.volX.toFixed(1) + "x average" : "volume only " + best.volX.toFixed(1) + "x (need " + TL_VOL + "x)")];
-  if (closedBack) { status = "FAILED"; text = "Price closed back " + (up ? "above" : "below") + " the line, a false break."; }
-  else if (best.candleOk && best.volOk && holds) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + ", price is holding beyond the line" + (retest != null ? ", and the retest held" : "") + "."; }
-  else if (best.candleOk && best.volOk) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + "."; }
-  else if (end === b0 && (best.candleOk || best.volOk)) { status = "WAITING"; text = "Just broke on the last closed candle: " + parts.join(", ") + ". Wait for the next candle to hold."; }
-  else { status = "UNCONFIRMED"; text = "Broke the line but " + parts.join(", ") + ". Not a reliable break yet."; }
+  const parts = [RM((best.candleOk ? "strong candle" : "weak candle") + " (closed " + best.beyond.toFixed(2) + " ATR beyond, body " + Math.round(best.body * 100) + "%)", (best.candleOk ? "mazboot candle" : "kamzor candle") + " (" + best.beyond.toFixed(2) + " ATR paar close, body " + Math.round(best.body * 100) + "%)"),
+    RM(best.volOk ? "volume " + best.volX.toFixed(1) + "x average" : "volume only " + best.volX.toFixed(1) + "x (need " + TL_VOL + "x)", best.volOk ? "volume average ka " + best.volX.toFixed(1) + " guna" : "volume sirf " + best.volX.toFixed(1) + " guna (" + TL_VOL + " guna chahiye)")];
+  if (closedBack) { status = "FAILED"; text = RM("Price closed back " + (up ? "above" : "below") + " the line, a false break.", "Price wapas line ke " + (up ? "upar" : "neeche") + " close hui, yeh jhoota break hai."); }
+  else if (best.candleOk && best.volOk && holds) { status = "CONFIRMED"; text = RM("Confirmed: " + parts.join(", ") + ", price is holding beyond the line" + (retest != null ? ", and the retest held" : "") + ".", "Confirmed: " + parts.join(", ") + ", price line ke paar tiki hui hai" + (retest != null ? ", aur retest bhi tik gaya" : "") + "."); }
+  else if (best.candleOk && best.volOk) { status = "CONFIRMED"; text = RM("Confirmed: " + parts.join(", ") + ".", "Confirmed: " + parts.join(", ") + "."); }
+  else if (end === b0 && (best.candleOk || best.volOk)) { status = "WAITING"; text = RM("Just broke on the last closed candle: " + parts.join(", ") + ". Wait for the next candle to hold.", "Abhi aakhri band candle par toota: " + parts.join(", ") + ". Agli candle ke tikne ka intezar karein."); }
+  else { status = "UNCONFIRMED"; text = RM("Broke the line but " + parts.join(", ") + ". Not a reliable break yet.", "Line tooti lekin " + parts.join(", ") + ". Abhi bharosay ka break nahi."); }
   return { i: b0, ci: best.i, dir: dirName, age, candleOk: best.candleOk, volOk: best.volOk, volX: best.volX, beyond: best.beyond, holds: holds && !closedBack, retest, status, text };
 }
 
@@ -1211,8 +1220,8 @@ function trendObsOf(A, id) {
     obs.forEach(o => {
       if (o.bias !== want) return;
       const atr = a.atr[Math.min(o.i, end)] || a.atr[end] || 1e-9, pad = 0.4 * atr, how = [];
-      if (o.i >= L.p1.i - 3) { const y = L.yAt(o.i); if (y >= o.lo - pad && y <= o.hi + pad) how.push("formed on the trendline"); }
-      if (L.brkI == null && L.nowP >= o.lo - pad && L.nowP <= o.hi + pad) how.push("trendline runs through it now");
+      if (o.i >= L.p1.i - 3) { const y = L.yAt(o.i); if (y >= o.lo - pad && y <= o.hi + pad) how.push(RM("formed on the trendline", "trendline par bana")); }
+      if (L.brkI == null && L.nowP >= o.lo - pad && L.nowP <= o.hi + pad) how.push(RM("trendline runs through it now", "trendline abhi iske andar se guzarti hai"));
       if (!how.length) return;
       res.push({ id, line: L, ob: o, how, valid: o.valid, confirmed: !!(o.now && o.now.confirmed), live: o.live, quality: o.quality });
     });

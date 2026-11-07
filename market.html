@@ -159,12 +159,20 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 
 .h3 { margin: 10px 0 4px; font-size: 14px; }
 
+.confbanner { padding: 10px 12px; margin: 6px 0; border-radius: 8px; font-weight: 700; text-align: center; color: #fff; cursor: pointer; animation: cblink 0.9s steps(2, start) infinite; }
+.confbanner.up { background: var(--up); } .confbanner.down { background: var(--down); }
+@keyframes cblink { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .confbanner { animation: none; } }
+
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
 "use strict";
+/* Roman Urdu text on the Analysis page only. RM(english, romanUrdu) gives the Roman Urdu version there and English everywhere else. */
+const ROMAN = /analysis/i.test(location.pathname.split("/").pop() || "");
+const RM = (en, ur) => ROMAN ? ur : en;
 /* Shared settings, storage and small helpers. Loaded first on every page. */
 /* Weekly is removed. Daily (show:false) is never displayed but is always used as background bias. */
 const TFS = [

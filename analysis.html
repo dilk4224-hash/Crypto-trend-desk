@@ -159,12 +159,20 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 
 .h3 { margin: 10px 0 4px; font-size: 14px; }
 
+.confbanner { padding: 10px 12px; margin: 6px 0; border-radius: 8px; font-weight: 700; text-align: center; color: #fff; cursor: pointer; animation: cblink 0.9s steps(2, start) infinite; }
+.confbanner.up { background: var(--up); } .confbanner.down { background: var(--down); }
+@keyframes cblink { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .confbanner { animation: none; } }
+
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
 "use strict";
+/* Roman Urdu text on the Analysis page only. RM(english, romanUrdu) gives the Roman Urdu version there and English everywhere else. */
+const ROMAN = /analysis/i.test(location.pathname.split("/").pop() || "");
+const RM = (en, ur) => ROMAN ? ur : en;
 /* Shared settings, storage and small helpers. Loaded first on every page. */
 /* Weekly is removed. Daily (show:false) is never displayed but is always used as background bias. */
 const TFS = [
@@ -226,6 +234,332 @@ const dirWord = d => d === "up" ? "uptrend" : d === "down" ? "downtrend" : "rang
 function dirLabel(d) { return d === "up" ? '<span class="up-t">Up</span>' : d === "down" ? '<span class="down-t">Down</span>' : '<span class="mute-t">Sideways</span>'; }
 const arrow = d => d === "up" ? '<span class="up-t">▲</span>' : d === "down" ? '<span class="down-t">▼</span>' : '<span class="mute-t">▬</span>';
 function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+</script>
+<script>
+"use strict";
+/* Roman Urdu for the Analysis page. Whole sentences are swapped first, then short phrases, then exact words in headers and labels.
+   Trading terms (order block, BOS, CHoCH, EMA, ATR, support, resistance, stop, target) stay in English on purpose. */
+const RU_PHR = {
+" (bear)": " (mandi)",
+" (bull)": " (tezi)",
+" (neutral)": " (neutral)",
+"Intact. ": "Line salamat hai. ",
+" (leg fully reversed)": " (leg poori ulat gayi)",
+" (new leg started)": " (nayi leg shuru)",
+"Retraced so far": "Ab tak retrace",
+"Price is back at ": "Price wapas aa gayi hai: ",
+"confirmation candle. Stop beyond the level.": "confirmation candle ka intezar karein. Stop level ke paar rakhein.",
+"False break. Price broke ": "Jhoota break. Price toot kar ",
+"and closed straight back. Trade the ": "phir seedhi wapas aa gayi. Is taraf trade karein: ",
+"side, stop beyond ": ", stop yahan se paar: ",
+"No retest yet and price is ": "Abhi retest nahi hua aur price ",
+"the level. Wait for a pullback to ": "level se door hai. Pullback ka intezar karein: ",
+"Retest of ": "Retest: ",
+" already held. The ": " pehle hi tik chuka. ",
+" toward it while it holds.": " ki taraf jab tak woh tiki rahe.",
+"buy dips": "dips par kharidein",
+"sell rallies": "rally par bechein",
+"candles ago)": "candles pehle)",
+"candles ago,": "candles pehle,",
+"Backs the ": "Taeed karta hai: ",
+"not enough pullbacks": "pullbacks kaafi nahi",
+"Not yet (": "Abhi nahi (",
+" candle needed)": " candle chahiye)",
+"inside a higher-timeframe order block": "bare timeframe ke order block ke andar",
+"with the bigger trend": "bare trend ke saath",
+", with the bigger trend": ", bare trend ke saath",
+"multiple BOS (strong trend)": "kai BOS (mazboot trend)",
+"multiple CHoCH (weak structure)": "kai CHoCH (kamzor structure)",
+"BOS after CHoCH (reversal confirmed)": "CHoCH ke baad BOS (reversal pakka)",
+"CHoCH after BOS (trend tiring)": "BOS ke baad CHoCH (trend thak raha)",
+"equal highs broken": "barabar highs tootay",
+"equal lows broken": "barabar lows tootay",
+"break out of a range": "range se bahar nikla",
+"news impulse": "news ka dhakka",
+"range low": "range ka low",
+"range high": "range ka high",
+"liquidity sweep before the break": "break se pehle liquidity sweep",
+"liquidity sweep": "liquidity sweep",
+"imbalance (FVG)": "imbalance (FVG)",
+"session open": "session ka aaghaz",
+"uptrend continuation": "uptrend jari rahega",
+"downtrend continuation": "downtrend jari rahega",
+"trend reversal": "trend palatna",
+"broken (price closed through it)": "toota hua (price ke paar close hui)",
+"fresh, not tested": "taaza, abhi test nahi hua",
+"tested once": "ek baar test hua",
+"weak, tested ": "kamzor, test hua ",
+"invalid (price closed back through it)": "ghalat (price wapas paar close hui)",
+"fresh breaker, not tested": "taaza breaker, abhi test nahi",
+"breaker block": "breaker block",
+"invalid now (closed through)": "ab ghalat (price paar close hui)",
+"VALID and confirmed on ": "VALID aur confirmed: ",
+"valid, price inside, waiting for ": "valid, price andar hai, intezar: ",
+"valid, price not at it yet": "valid, price abhi wahan nahi",
+"rejection wick": "rejection wick",
+"strong green candle closing beyond the last one": "mazboot hari candle jo pichli se upar band hui",
+"strong red candle closing beyond the last one": "mazboot surkh candle jo pichli se neeche band hui",
+"closed back above the middle of the block": "block ke beech se upar wapas close hui",
+"closed back below the middle of the block": "block ke beech se neeche wapas close hui",
+"long upper wick, sellers rejected higher prices": "lambi upar wali wick, bechne walon ne oonchi qeematein radd kin",
+"long lower wick, buyers rejected lower prices": "lambi neeche wali wick, kharidaron ne neechi qeematein radd kin",
+"strong selling, small wicks": "mazboot farokht, chhoti wicks",
+"strong buying, small wicks": "mazboot khareedari, chhoti wicks",
+"Price is inside a valid ": "Price valid hai: ",
+"Order block = the last opposite candle before a move that broke structure (BOS) or reversed it (CHoCH). Quality score (max 7): break of structure and strong move (2), imbalance/FVG (+1), liquidity sweep (+1), untouched (+1), agrees with the bigger trend (+1), session open / news / range edge / inside a higher-timeframe block (+1). Weak blocks (score under 4) are not used for signals. A broken block becomes a breaker block pointing the other way.": "Order block = us move se pehle ki aakhri ulti candle jis ne structure toda (BOS) ya palta (CHoCH). Quality score (zyada se zyada 7): structure break aur mazboot move (2), imbalance/FVG (+1), liquidity sweep (+1), abhi tak chhua nahi gaya (+1), bare trend ke saath (+1), session open / news / range ka kinara / bare timeframe ke block ke andar (+1). Kamzor blocks (score 4 se kam) signals mein istemal nahi hote. Toota hua block ulti taraf ka breaker block ban jata hai.",
+"A line joins 2 or more swing lows (support) or highs (resistance) and must not be cut by a close between them. A break is CONFIRMED only when the candle closes at least 0.25 ATR beyond the line with a body of 50% or more, volume is 1.3x the 20-candle average or more, and price stays beyond it. Otherwise it is UNCONFIRMED or a FAILED (false) break.": "Line 2 ya zyada swing lows (support) ya swing highs (resistance) ko jodti hai, aur beech mein koi candle close se isay kati nahi honi chahiye. Break tabhi CONFIRMED hota hai jab candle line se kam az kam 0.25 ATR bahar close ho, body 50% ya zyada ho, volume 20 candles ke average ka 1.3 guna ya zyada ho, aur price line ke bahar tike. Warna UNCONFIRMED ya FAILED (jhoota break) hai.",
+"Entry level = neckline or trendline. Enter after a candle closes beyond it (confirmed), ideally on the retest. Target = the height of the pattern measured from the entry level. Patterns are rough shapes found from swing points, so always check them on the chart.": "Entry level = neckline ya trendline. Candle iske paar close ho (confirmed) to entry lein, behtar hai retest par. Target = pattern ki unchai jo entry level se naapi jati hai. Patterns swing points se mili hui andazi shaklein hain, is liye hamesha chart par khud check karein.",
+"Patterns are read on closed candles only. A pattern is a hint, not a promise. It counts most when it forms at a support or resistance level, at a retracement zone, and agrees with the trend.": "Patterns sirf band (closed) candles par parhe jate hain. Pattern ek ishara hai, wada nahi. Sab se zyada ahmiyat tab hai jab yeh support ya resistance par, retracement zone mein banay aur trend ke saath ho.",
+"A break counts only when a candle closes beyond a zone (touched at least twice) by more than 0.15 ATR. After a break the best entry is usually the retest, not the break candle.": "Break tabhi ginta hai jab candle zone (jo kam az kam 2 baar chhua gaya ho) se 0.15 ATR se zyada paar close ho. Break ke baad behtareen entry aam tor par retest hota hai, break wali candle nahi.",
+"No recent sweep. The liquidity entry: price sweeps stops above highs or below lows, then a CHoCH the other way, then a pullback into an order block or imbalance is the entry.": "Haal mein koi sweep nahi. Liquidity entry: price highs ke upar ya lows ke neeche stops ko sweep kare, phir ulti taraf CHoCH aaye, phir order block ya imbalance mein pullback entry hai.",
+". A pullback into the zone with a confirming candle is the pullback entry used on the Signals page. If price closes beyond the start of the leg, the idea is invalid.": ". Zone mein pullback aur confirming candle wohi pullback entry hai jo Signals page par istemal hoti hai. Agar price leg ki shuruaat ke paar close ho jaye to idea ghalat (invalid) hai.",
+"Small body with a long upper wick after a rise. Buyers were rejected at the top. Bearish if the next candle closes lower.": "Tezi ke baad chhoti body aur lambi upar wali wick. Upar kharidaron ko radd kar diya gaya. Agli candle neeche band ho to bearish.",
+"Open and close are almost the same, so buyers and sellers are balanced. The trend may pause. Wait for the next candle.": "Open aur close lagbhag barabar, yaani kharidar aur farokht karne wale barabar hain. Trend ruk sakta hai. Agli candle ka intezar karein.",
+"Same shape as a hammer but after a rise. Warns that buyers are weakening. Needs a red candle after it to confirm.": "Hammer jaisi shakal lekin tezi ke baad. Khabardar karti hai ke kharidar kamzor ho rahe hain. Confirm karne ke liye iske baad surkh candle chahiye.",
+"Small body with a long lower wick after a fall. Sellers lost control. Stronger if the next candle closes higher.": "Giravat ke baad chhoti body aur lambi neeche wali wick. Bechne walon ka control khatam. Agli candle upar band ho to aur mazboot.",
+"A red candle closes below the middle of the previous green one. Sellers are fighting back after a rise.": "Surkh candle pichli hari candle ke beech se neeche close hui. Tezi ke baad bechne wale wapas zor laga rahe hain.",
+"A green candle closes above the middle of the previous red one. Buyers are fighting back after a fall.": "Hari candle pichli surkh candle ke beech se upar close hui. Giravat ke baad kharidar wapas zor laga rahe hain.",
+"Sharp rise, then a small pullback in a parallel channel. A close above the channel continues the rise.": "Tez izafa, phir barabar channel mein chhota pullback. Channel ke upar close ho to tezi jari rehti hai.",
+"Sharp drop, then a small bounce in a parallel channel. A close below the channel continues the drop.": "Tez giravat, phir barabar channel mein chhota bounce. Channel ke neeche close ho to giravat jari rehti hai.",
+"Body, wick and volume are shown as a share of the candle range and of the 20-candle average volume.": "Body, wick aur volume candle ki range aur 20 candles ke average volume ke hissay (percent) mein dikhaye gaye hain.",
+"Long lower wick after a fall. Sellers pushed price down but buyers took it back. Can mark a bottom.": "Giravat ke baad lambi neeche wali wick. Bechne walon ne price giraya lekin kharidaron ne wapas utha liya. Bottom ka ishara ho sakta hai.",
+"Price swings widen and then narrow after a downtrend. A close above the last high confirms a rise.": "Downtrend ke baad price ke swings pehle phailte hain phir tang hote hain. Aakhri high ke upar close ho to izafa confirm.",
+"Long upper wick after a fall. Buyers tried to push up. Needs a green candle after it to confirm.": "Giravat ke baad lambi upar wali wick. Kharidaron ne upar dhakelne ki koshish ki. Confirm karne ke liye iske baad hari candle chahiye.",
+"Price swings widen and then narrow after an uptrend. A close below the last low confirms a drop.": "Uptrend ke baad price ke swings pehle phailte hain phir tang hote hain. Aakhri low ke neeche close ho to giravat confirm.",
+"Double top/bottom, head and shoulders, three drive, wedges, flags, pennants, diamonds, rounding": "Double top/bottom, head and shoulders, three drive, wedges, flags, pennants, diamonds, rounding",
+"Two highs at the same level. A close below the neckline (the low between them) confirms a drop.": "Do highs ek hi level par. Neckline (beech ka low) ke neeche close ho to giravat confirm.",
+"Two lows at the same level. A close above the neckline (the high between them) confirms a rise.": "Do lows ek hi level par. Neckline (beech ka high) ke upar close ho to izafa confirm.",
+"Long upper wick after a rise. Buyers pushed price up but sellers took it back. Can mark a top.": "Tezi ke baad lambi upar wali wick. Kharidaron ne price upar kiya lekin bechne walon ne wapas la diya. Top ka ishara ho sakta hai.",
+"A slow curve up and back down. Reversal down once price falls back to where the curve started.": "Aahista upar jata aur wapas neeche aata curve. Price wahan wapas aaye jahan curve shuru hua tha to neeche ka reversal.",
+"The daily chart is also read in the background for the signal bias, but it is not shown here.": "Signal ke rujhan ke liye daily chart bhi peeche se parha jata hai, lekin yahan dikhaya nahi jata.",
+"No trendline with an order block at price, and no confirmed trendline break in your direction": "Price par order block ke saath koi trendline nahi, aur aap ki taraf koi confirmed trendline break nahi",
+"A red candle fully covers the previous green one. Sellers took over. Strongest after a rise.": "Surkh candle pichli hari candle ko poori dhak leti hai. Bechne walon ne qabza kar liya. Tezi ke baad sab se mazboot.",
+"A slow curve down and back up. Reversal up once price rises back to where the curve started.": "Aahista neeche jata aur wapas upar aata curve. Price wahan wapas pohnche jahan curve shuru hua tha to upar ka reversal.",
+"A green candle fully covers the previous red one. Buyers took over. Strongest after a fall.": "Hari candle pichli surkh candle ko poori dhak leti hai. Kharidaron ne qabza kar liya. Giravat ke baad sab se mazboot.",
+"Big red candle, a small pause candle, then a big green candle. A bottom reversal pattern.": "Bari surkh candle, chhoti ruki hui candle, phir bari hari candle. Bottom reversal pattern.",
+"Left shoulder, a higher head, right shoulder. A close below the neckline confirms a drop.": "Left shoulder, ooncha head, right shoulder. Neckline ke neeche close ho to giravat confirm.",
+"Three falling pushes down. A close above the neckline (the bounce highs) confirms a rise.": "Teen girte hue dhakke. Neckline (bounce ke highs) ke upar close ho to izafa confirm.",
+"Valid = not broken and tested at most once. Confirmation is read on the lower timeframe.": "Valid = toota nahi aur zyada se zyada ek baar test hua. Confirmation chhote timeframe par dekhi jati hai.",
+"Left shoulder, a lower head, right shoulder. A close above the neckline confirms a rise.": "Left shoulder, neecha head, right shoulder. Neckline ke upar close ho to izafa confirm.",
+"Three rising pushes up. A close below the neckline (the pullback lows) confirms a drop.": "Teen barhte hue dhakke. Neckline (pullback ke lows) ke neeche close ho to giravat confirm.",
+"No EMA or support/resistance zone lines up with the main retracement levels right now.": "Abhi koi EMA ya support/resistance zone mukhya retracement levels ke saath nahi milta.",
+"Big green candle, a small pause candle, then a big red candle. A top reversal pattern.": "Bari hari candle, chhoti ruki hui candle, phir bari surkh candle. Top reversal pattern.",
+"Two candles with the same high after a rise. Price was rejected at that level twice.": "Tezi ke baad do candles ka ek hi high. Price us level se do baar radd hua.",
+"Two candles with the same low after a fall. Price was rejected at that level twice.": "Giravat ke baad do candles ka ek hi low. Price us level se do baar radd hua.",
+"Both lines rise and squeeze together. A close below the lower line confirms a drop.": "Dono lines upar jati hain aur ek doosre ke qareeb aati hain. Neeche wali line ke neeche close ho to giravat confirm.",
+"Both lines fall and squeeze together. A close above the upper line confirms a rise.": "Dono lines neeche jati hain aur ek doosre ke qareeb aati hain. Upar wali line ke upar close ho to izafa confirm.",
+"Sharp rise, then a small tightening triangle. A close above it continues the rise.": "Tez izafa, phir chhota tang hota triangle. Iske upar close ho to tezi jari.",
+"Sharp drop, then a small tightening triangle. A close below it continues the drop.": "Tez giravat, phir chhota tang hota triangle. Iske neeche close ho to giravat jari.",
+"Three strong green candles in a row, each closing higher. Steady buying pressure.": "Lagatar teen mazboot hari candles, har ek upar band. Musalsal khareedari ka dabao.",
+"Uptrend = higher highs and higher lows. Downtrend = lower highs and lower lows.": "Uptrend = ooncha highs aur ooncha lows. Downtrend = neecha highs aur neecha lows.",
+"Three strong red candles in a row, each closing lower. Steady selling pressure.": "Lagatar teen mazboot surkh candles, har ek neeche band. Musalsal farokht ka dabao.",
+"A small green candle inside the previous big red one. Selling is slowing down.": "Pichli bari surkh candle ke andar chhoti hari candle. Farokht dheemi ho rahi hai.",
+"No support or resistance zone broke in the last 45 candles on this timeframe.": "Is timeframe par pichli 45 candles mein koi support ya resistance zone nahi toota.",
+"Strong green candle with almost no wicks. Buyers controlled the whole period.": "Mazboot hari candle, lagbhag koi wick nahi. Poore waqt kharidaron ka control raha.",
+"A small red candle inside the previous big green one. Buying is slowing down.": "Pichli bari hari candle ke andar chhoti surkh candle. Khareedari dheemi ho rahi hai.",
+"Strong red candle with almost no wicks. Sellers controlled the whole period.": "Mazboot surkh candle, lagbhag koi wick nahi. Poore waqt bechne walon ka control raha.",
+"Price closed above the last LH, so the downtrend is broken (CHoCH).": "Price aakhri LH ke upar close hui, is liye downtrend toot gaya (CHoCH).",
+"Price closed below the last HL, so the uptrend is broken (CHoCH).": "Price aakhri HL ke neeche close hui, is liye uptrend toot gaya (CHoCH).",
+"4H levels are read on the 15m chart, 1H levels on the 5m chart": "4H levels 15m chart par, 1H levels 5m chart par parhe jate hain",
+"Small body with wicks on both sides. The market is undecided.": "Chhoti body aur dono taraf wicks. Market faisla nahi kar paayi.",
+"Trendlines, order blocks on them, and break confirmation": "Trendlines, un par order blocks, aur break ki confirmation",
+"No chart pattern found on 5m, 15m, 1H or 4H right now.": "Abhi 5m, 15m, 1H ya 4H par koi chart pattern nahi mila.",
+"Buy pullbacks while price stays above the last HL.": "Jab tak price aakhri HL ke upar hai, pullbacks par kharidein.",
+"Sell rallies while price stays below the last LH.": "Jab tak price aakhri LH ke neeche hai, tezi (rally) par bechein.",
+"No strong pattern on the last 5m or 15m candle.": "Aakhri 5m ya 15m candle par koi mazboot pattern nahi.",
+"No clear trend. Trade the range edges or wait.": "Trend saaf nahi. Range ke kinaron par trade karein ya intezar karein.",
+"4H and 1H levels: trend break or reversal?": "4H aur 1H levels: trend break ya reversal?",
+"No pattern on the last 3 closed candles.": "Aakhri 3 band candles par koi pattern nahi.",
+"Not enough swings yet to measure a leg.": "Leg naapne ke liye abhi swings kaafi nahi.",
+". Do not chase. Wait for a retest that holds, then": ". Peecha na karein. Aisay retest ka intezar karein jo tik jaye, phir",
+"Candle read (used for the signal)": "Candle ka jaiza (signal mein istemal hota hai)",
+"Last swings (oldest to newest)": "Aakhri swings (purane se naye)",
+"Pullback zone (38.2% to 61.8%)": "Pullback zone (38.2% se 61.8%)",
+"Warning, points the other way:": "Khabardar, ulti taraf ishara:",
+"No 4H or 1H levels near price.": "Price ke qareeb koi 4H ya 1H level nahi.",
+"No clear liquidity near price.": "Price ke qareeb saaf liquidity nahi.",
+"up (a pullback would be down)": "upar (pullback neeche hoga)",
+"down (a pullback would be up)": "neeche (pullback upar hoga)",
+"old resistance is now support": "purani resistance ab support hai",
+"old support is now resistance": "purana support ab resistance hai",
+"Break check (candle + volume)": "Break ki jaanch (candle + volume)",
+"No clean trendline right now.": "Abhi koi saaf trendline nahi.",
+"Last 50 and last 100 candles": "Aakhri 50 aur aakhri 100 candles",
+"Typical pullback depth (last": "Aam pullback ki gehrai (aakhri",
+"Closed candles only": "Sirf band candles",
+"Detail for one timeframe": "Ek timeframe ki tafseel",
+"No order blocks found.": "Koi order block nahi mila.",
+"Candlestick patterns ·": "Candlestick patterns ·",
+"Higher / lower swings": "Ooncha / neecha swings",
+"Price is at the line.": "Price line par hai.",
+"Not touched now.": "Abhi line ko chhua nahi.",
+"Market structure ·": "Market ka structure ·",
+"Position in range": "Range mein jagah",
+"Closed above EMA 20": "EMA 20 ke upar close",
+"Line now (distance)": "Line abhi (faasla)",
+"Candle confirmation": "Candle ki confirmation",
+"Order block on the line": "Line par order block",
+"Where that would end": "Woh kahan khatam hoga",
+"Breaks and retests ·": "Breaks aur retests ·",
+"Last swing high": "Aakhri swing high",
+"Last swing low": "Aakhri swing low",
+"Patterns up / down": "Patterns upar / neeche",
+"Leg direction:": "Leg ki simt:",
+"Confluence:": "Milap (confluence):",
+"What it means": "Iska matlab",
+"Why it counts": "Yeh kyun ginta hai",
+"Order blocks": "Order blocks",
+"Chart patterns": "Chart patterns",
+"Latest leg": "Taza leg",
+"Range width": "Range ki chorai",
+"Volume trend": "Volume ka rujhan",
+"Green / red": "Hari / surkh",
+"Read = a score from 7 checks: net move, closes above EMA 20, higher vs lower swings, green vs red candles, position in the range, slope, and candle patterns. +3 or more is Bullish, -3 or less is Bearish, anything between is a Range. The signal on the Signals page uses the 15m last 50, the 15m last 100 and the 1H last 50.": "Jaiza (Read) = 7 checks ka score: kul harkat, EMA 20 ke upar close, ooncha vs neecha swings, hari vs surkh candles, range mein jagah, dhalan (slope), aur candle patterns. +3 ya zyada Bullish (tezi), -3 ya kam Bearish (mandi), beech ka matlab Range. Signals page ka signal 15m aakhri 50, 15m aakhri 100 aur 1H aakhri 50 istemal karta hai.",
+"= the candle touched the level and was rejected (long wick or a reversal pattern).": "= candle ne level ko chhua aur radd hui (lambi wick ya reversal pattern).",
+"= a candle closed beyond the level by more than 0.15 ATR, confirmed when the next candle holds.": "= candle level ke paar 0.15 ATR se zyada close hui, agli candle tik jaye to confirmed.",
+"= it closed beyond and then back. The best break entry is the retest of the level.": "= paar close hui aur phir wapas aa gayi. Break ki behtareen entry level ka retest hai.",
+"BOS = close beyond the last swing in the trend direction (trend continues). CHoCH = close beyond the last swing against the trend (first sign of reversal). Several BOS in a row show a strong trend. Several CHoCH in a row show weak structure.": "BOS = trend ki simt mein aakhri swing ke paar close (trend jari). CHoCH = trend ke ulat aakhri swing ke paar close (reversal ka pehla ishara). Lagatar kai BOS mazboot trend dikhate hain. Lagatar kai CHoCH kamzor structure dikhate hain.",
+"Several BOS in a row": "Lagatar kai BOS",
+"· last 4 closed candles": "· aakhri 4 band candles",
+"Reversal": "Reversal",
+"Trend break": "Trend break",
+"Retracement ·": "Retracement ·",
+"BOS and CHoCH ·": "BOS aur CHoCH ·",
+"Liquidity ·": "Liquidity ·",
+"No pullback": "Koi pullback nahi",
+"resting": "intezar mein (resting)"
+};
+const RU_WORD = {
+"Timeframe": "Timeframe",
+"Structure": "Structure",
+"Note": "Note",
+"Notes": "Tafseel",
+"Candles": "Candles",
+"Read": "Jaiza",
+"Net move": "Kul harkat",
+"Candle": "Candle",
+"Colour": "Rang",
+"Size": "Size",
+"Body": "Body",
+"Upper wick": "Upar wali wick",
+"Lower wick": "Neeche wali wick",
+"Volume": "Volume",
+"Level": "Level",
+"Price": "Price",
+"From price": "Price se faasla",
+"Move": "Harkat",
+"Candles ago": "Kitni candles pehle",
+"Status": "Halat",
+"What to do": "Kya karein",
+"Meaning": "Matlab",
+"Pattern": "Pattern",
+"Bias": "Rujhan",
+"Strength": "Taqat",
+"Read on": "Is par parha",
+"Result": "Nateeja",
+"Touches": "Chhuwe",
+"Line": "Line",
+"Type": "Qism",
+"Zone": "Zone",
+"Quality": "Quality",
+"Valid now?": "Abhi valid?",
+"Age": "Umar",
+"Event": "Waqia",
+"Ago": "Pehle",
+"Retest": "Retest",
+"Side": "Taraf",
+"Stop": "Stop",
+"Target": "Target",
+"Entry level": "Entry level",
+"Green": "Hari",
+"Red": "Surkh",
+"Yes": "Haan",
+"None yet.": "Abhi koi nahi.",
+"NEUTRAL": "NEUTRAL",
+"BULLISH": "BULLISH (tezi)",
+"BEARISH": "BEARISH (mandi)",
+"BULLISH ▲": "BULLISH ▲ (tezi)",
+"BEARISH ▼": "BEARISH ▼ (mandi)",
+"VALID": "VALID (durust)",
+"INVALID": "INVALID (ghalat)",
+"CONFIRMED": "CONFIRMED (pakka)",
+"UNCONFIRMED": "UNCONFIRMED (kachcha)",
+"FAILED": "FAILED (nakam)",
+"WAITING": "INTEZAR",
+"FORMING": "ban raha hai",
+"SWEPT": "SWEEP HUA",
+"REVERSAL": "REVERSAL (palatna)",
+"TREND BREAK": "TREND BREAK (trend toota)",
+"FALSE BREAK": "JHOOTA BREAK",
+"TESTING": "TEST HO RAHA",
+"NOT AT LEVEL": "LEVEL PAR NAHI",
+"PRICE IS INSIDE": "PRICE ANDAR HAI",
+"RISING SUPPORT": "BARHTI SUPPORT LINE",
+"FALLING RESISTANCE": "GIRTI RESISTANCE LINE",
+"BREAKER": "BREAKER",
+"Trend break": "Trend break",
+"False break": "Jhoota break",
+"Reversal": "Reversal",
+"Buy-side (above)": "Buy-side (upar)",
+"Sell-side (below)": "Sell-side (neeche)",
+"Buy-side": "Buy-side",
+"Sell-side": "Sell-side",
+"Trendline": "Trendline",
+"Intact.": "Line salamat hai.",
+"Last closed": "Aakhri band",
+"Candle confirmation": "Candle ki confirmation",
+"Equal highs": "Barabar highs",
+"Equal lows": "Barabar lows",
+"Swing high": "Swing high",
+"Swing low": "Swing low",
+"Uptrend": "Uptrend (tezi)",
+"Downtrend": "Downtrend (mandi)",
+"Range": "Range (rukawat)",
+"Analysis": "Analysis",
+"none": "koi nahi",
+"good": "achha",
+"strong": "mazboot",
+"weak": "kamzor",
+"large": "bara",
+"small": "chhota",
+"normal": "normal",
+"BREAKER BULLISH ▲": "BREAKER BULLISH ▲ (tezi)",
+"BREAKER BEARISH ▼": "BREAKER BEARISH ▼ (mandi)",
+"Doji": "Doji",
+"Up": "Upar (uptrend)",
+"Down": "Neeche (downtrend)",
+"Sideways": "Sideways (range)",
+"held": "tik gaya",
+"fresh": "taaza toota",
+"awaiting": "retest ka intezar",
+"retesting": "retest ho raha",
+"BREAK UP": "BREAK UPAR",
+"BREAK DOWN": "BREAK NEECHE",
+"up": "upar",
+"down": "neeche",
+"resting": "intezar mein",
+"Strong": "Mazboot",
+"Medium": "Darmiyana",
+"Weak": "Kamzor",
+"not enough pullbacks": "pullbacks kaafi nahi",
+"Equal": "Barabar",
+"Swing": "Swing"
+};
+const RU_KEYS = Object.keys(RU_PHR).sort((a, b) => b.length - a.length);
+function romanize(root) {
+  if (!ROMAN || !root) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  nodes.forEach(n => {
+    const raw = n.nodeValue, t = raw.trim(); if (!t || n.parentNode.closest("script,style")) return;
+    let out = raw;
+    if (RU_WORD[t] != null) out = raw.replace(t, RU_WORD[t]);
+    else for (const k of RU_KEYS) if (out.indexOf(k) > -1) out = out.split(k).join(RU_PHR[k]);
+    if (out !== raw) n.nodeValue = out;
+  });
+  root.querySelectorAll("[title]").forEach(el => { const t = el.getAttribute("title"); if (RU_PHR[t]) el.setAttribute("title", RU_PHR[t]); });
+}
 
 </script>
 <script>
@@ -494,8 +828,9 @@ function lastN(a, N) {
   sc += bp - brp >= 1 ? 1 : brp - bp >= 1 ? -1 : 0;
   const bias = sc >= 3 ? "up" : sc <= -3 ? "down" : "range";
   const label = bias === "up" ? "Bullish" : bias === "down" ? "Bearish" : "Range";
-  const text = label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + (net >= 0 ? "+" : "") + net.toFixed(2) + "% over " + m + " candles, " + Math.round(pctAbove * 100) + "% closed above EMA 20, " +
-    (cnt.HH + cnt.HL) + " higher swings vs " + (cnt.LH + cnt.LL) + " lower swings";
+  const text = RM(label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + (net >= 0 ? "+" : "") + net.toFixed(2) + "% over " + m + " candles, " + Math.round(pctAbove * 100) + "% closed above EMA 20, " +
+    (cnt.HH + cnt.HL) + " higher swings vs " + (cnt.LH + cnt.LL) + " lower swings", label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + m + " candles mein " + (net >= 0 ? "+" : "") + net.toFixed(2) + "%, " + Math.round(pctAbove * 100) + "% EMA 20 ke upar close, " +
+    (cnt.HH + cnt.HL) + " ooncha swings aur " + (cnt.LH + cnt.LL) + " neecha swings");
   return (a._n[N] = { N: m, start, end, net, netATR, bull, bear, pctAbove, volRatio, cnt, pos, hi, lo, slopeATR, bp, brp, score: sc, bias, label, text, widthPct: (hi - lo) / ((hi + lo) / 2) * 100 });
 }
 
@@ -604,8 +939,8 @@ function retraceInfo(a) {
       const conf = [];
       const zs = zonesOf(a).zones.filter(z => z.n >= 2);
       levels.slice(0, 3).forEach(L => {
-        [["EMA 20", a.ema20[end]], ["EMA 50", a.ema50[end]]].forEach(([nm, v]) => { if (v != null && Math.abs(v - L.p) <= 0.3 * atr) conf.push(nm + " sits at the " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ")"); });
-        zs.forEach(z => { if (Math.abs(z.p - L.p) <= 0.3 * atr) conf.push("support/resistance zone " + fp(z.p) + " (x" + z.n + ") sits at the " + (L.f * 100).toFixed(1) + "% level"); });
+        [["EMA 20", a.ema20[end]], ["EMA 50", a.ema50[end]]].forEach(([nm, v]) => { if (v != null && Math.abs(v - L.p) <= 0.3 * atr) conf.push(RM(nm + " sits at the " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ")", nm + " " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ") par hai")); });
+        zs.forEach(z => { if (Math.abs(z.p - L.p) <= 0.3 * atr) conf.push(RM("support/resistance zone " + fp(z.p) + " (x" + z.n + ") sits at the " + (L.f * 100).toFixed(1) + "% level", "support/resistance zone " + fp(z.p) + " (x" + z.n + ") " + (L.f * 100).toFixed(1) + "% level par hai")); });
       });
       res = { dir, from, to, R, levels, golden: [gLo, gHi], depthNow, inGolden, invalid: depthNow > 1, avgDepth, nLegs: ds.length, usedWin, typicalP: avgDepth == null ? null : lv(avgDepth), conf };
     }
@@ -832,8 +1167,8 @@ function liquidityOf(a) {
     const ch = structureEvents(a).find(e => e.kind === "CHoCH" && e.dir === dir && e.i > sw0.sweepI && e.i - sw0.sweepI <= 20);
     const ob = ch ? orderBlocksOf(a).find(o => o.kind === "ob" && o.valid && o.bias === (dir === "up" ? "bull" : "bear") && o.evI === ch.i) : null;
     model = { dir, sweep: sw0, choch: ch || null, ob: ob || null,
-      stage: ch ? "Sweep and CHoCH done. Wait for a pullback into the " + (ob ? "order block " + fp(ob.lo) + " to " + fp(ob.hi) : "order block or imbalance") + ", then enter " + (dir === "up" ? "long" : "short") + "."
-        : (sw0.side === "sell" ? "Sell-side liquidity at " : "Buy-side liquidity at ") + fp(sw0.p) + " was swept. Wait for a CHoCH " + (dir === "up" ? "up" : "down") + " before entering." };
+      stage: ch ? RM("Sweep and CHoCH done. Wait for a pullback into the " + (ob ? "order block " + fp(ob.lo) + " to " + fp(ob.hi) : "order block or imbalance") + ", then enter " + (dir === "up" ? "long" : "short") + ".", "Sweep aur CHoCH ho chuke. " + (ob ? "Order block " + fp(ob.lo) + " se " + fp(ob.hi) : "Order block ya imbalance") + " mein pullback ka intezar karein, phir " + (dir === "up" ? "long" : "short") + " entry lein.")
+        : RM((sw0.side === "sell" ? "Sell-side liquidity at " : "Buy-side liquidity at ") + fp(sw0.p) + " was swept. Wait for a CHoCH " + (dir === "up" ? "up" : "down") + " before entering.", (sw0.side === "sell" ? "Sell-side" : "Buy-side") + " liquidity " + fp(sw0.p) + " par sweep ho gayi. Entry se pehle " + (dir === "up" ? "upar" : "neeche") + " CHoCH ka intezar karein.") };
   }
   return (a._liq = { pools, live, sweeps, trend, model });
 }
@@ -860,7 +1195,7 @@ function levelConfirm(A) {
     const base = { tf: L.tf, confTf: ct, p: L.p, n: L.n, side: L.side, dist: (L.p - price) / price * 100, read: "none", dir: null, strength: null, pats: [], text: "", age: null };
     const touchIdx = []; for (let q = e - 2; q <= e; q++) if (c[q].l <= L.p + tol && c[q].h >= L.p - tol) touchIdx.push(q);
     const crossed = [e - 2, e - 1, e].some(q => c[q].c > L.p + 0.15 * atrC) && [e - 2, e - 1, e].some(q => c[q].c < L.p - 0.15 * atrC);
-    if (!touchIdx.length && !crossed) { base.text = name + ": price is " + Math.abs(base.dist).toFixed(2) + "% away. Waiting for it to reach the level."; res.push(base); return; }
+    if (!touchIdx.length && !crossed) { base.text = RM(name + ": price is " + Math.abs(base.dist).toFixed(2) + "% away. Waiting for it to reach the level.", name + ": price level se " + Math.abs(base.dist).toFixed(2) + "% door hai. Level tak pohnchne ka intezar."); res.push(base); return; }
     const fromBelow = c[e - 3].c < L.p, volOf = q => C.volSma[q] ? c[q].v / C.volSma[q] : null;
     const bodyPct = q => { const P = candleParts(c[q]); return P.range ? P.body / P.range : 0; };
     const patsAt = (q, bias) => detectPatterns(C, q).filter(p => p.bias === bias && p.str >= 2).map(p => p.name);
@@ -874,12 +1209,12 @@ function levelConfirm(A) {
       const backNow = fromBelow ? c[e].c < L.p : c[e].c > L.p;
       if (backNow) {
         res.push({ ...base, read: "trap", dir: fromBelow ? "down" : "up", strength: bodyPct(e) >= 0.4 ? "confirmed" : "early", pats: patsAt(e, bias), age: e - first,
-          text: name + ": false break. Price closed " + (fromBelow ? "above" : "below") + " it on the " + tfl(ct) + " chart and then back " + (fromBelow ? "below" : "above") + ". Reversal " + (fromBelow ? "down" : "up") + " is likely." });
+          text: RM(name + ": false break. Price closed " + (fromBelow ? "above" : "below") + " it on the " + tfl(ct) + " chart and then back " + (fromBelow ? "below" : "above") + ". Reversal " + (fromBelow ? "down" : "up") + " is likely.", name + ": jhoota break. Price " + tfl(ct) + " chart par level ke " + (fromBelow ? "upar" : "neeche") + " close hui aur phir wapas " + (fromBelow ? "neeche" : "upar") + " aa gayi. " + (fromBelow ? "Neeche" : "Upar") + " ka reversal mumkin hai.") });
       } else {
         const held = last === e && e - first >= 1 && (fromBelow ? c[e].l >= L.p - tol : c[e].h <= L.p + tol);
         const v = volOf(first), strong = (v != null && v >= 1.2) || bodyPct(first) >= 0.6;
         res.push({ ...base, read: "break", dir: fromBelow ? "up" : "down", strength: held ? "confirmed" : "early", pats: [], age: e - first,
-          text: name + ": TREND BREAK " + (fromBelow ? "up" : "down") + ". " + closesBeyond.length + " closed " + tfl(ct) + " candle" + (closesBeyond.length > 1 ? "s" : "") + " beyond it" + (strong ? " (strong candle / volume)" : "") + (held ? ", and it is holding. " : ". Wait for the next candle to hold. ") + "Best entry is the retest of " + fp(L.p) + "." });
+          text: RM(name + ": TREND BREAK " + (fromBelow ? "up" : "down") + ". " + closesBeyond.length + " closed " + tfl(ct) + " candle" + (closesBeyond.length > 1 ? "s" : "") + " beyond it" + (strong ? " (strong candle / volume)" : "") + (held ? ", and it is holding. " : ". Wait for the next candle to hold. ") + "Best entry is the retest of " + fp(L.p) + ".", name + ": TREND BREAK " + (fromBelow ? "upar" : "neeche") + ". " + closesBeyond.length + " band " + tfl(ct) + " candle(s) level ke paar" + (strong ? " (mazboot candle / volume)" : "") + (held ? ", aur tiki hui hain. " : ". Agli candle ke tikne ka intezar karein. ") + "Behtareen entry " + fp(L.p) + " ka retest hai.") });
       }
       return;
     }
@@ -895,9 +1230,9 @@ function levelConfirm(A) {
     if (best) {
       const fresh = best.q >= e - 1;
       res.push({ ...base, read: "reversal", dir: fromBelow ? "down" : "up", strength: fresh && (best.pats.length || best.wick >= 0.5) ? "confirmed" : "early", pats: best.pats, age: e - best.q,
-        text: name + ": REVERSAL " + (fromBelow ? "down" : "up") + ". " + tfl(ct) + " candle rejected the level" + (best.wick >= 0.4 ? " with a " + Math.round(best.wick * 100) + "% " + (fromBelow ? "upper" : "lower") + " wick" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + "." });
+        text: RM(name + ": REVERSAL " + (fromBelow ? "down" : "up") + ". " + tfl(ct) + " candle rejected the level" + (best.wick >= 0.4 ? " with a " + Math.round(best.wick * 100) + "% " + (fromBelow ? "upper" : "lower") + " wick" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + ".", name + ": REVERSAL " + (fromBelow ? "neeche" : "upar") + ". " + tfl(ct) + " candle ne level ko radd kiya" + (best.wick >= 0.4 ? " (" + Math.round(best.wick * 100) + "% " + (fromBelow ? "upar" : "neeche") + " wali wick ke saath)" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + ".") });
     } else {
-      res.push({ ...base, read: "testing", dir: null, strength: null, text: name + ": price is testing the level. No rejection and no close beyond it yet on the " + tfl(ct) + " chart. Wait." });
+      res.push({ ...base, read: "testing", dir: null, strength: null, text: RM(name + ": price is testing the level. No rejection and no close beyond it yet on the " + tfl(ct) + " chart. Wait.", name + ": price level ko test kar rahi hai. " + tfl(ct) + " chart par abhi na rejection hai na level ke paar close. Intezar karein.") });
     }
   });
   const rank = r => (r.read === "none" ? 3 : r.read === "testing" ? 2 : r.strength === "confirmed" ? 0 : 1);
@@ -1160,7 +1495,7 @@ function trendlinesOf(a) {
     L.near = Math.abs(price - L.nowP) <= 0.6 * atr;
     L.brk = L.brkI != null ? tlBreakCheck(a, L) : null;
     L.status = L.brk ? L.brk.status : "intact";
-    L.name = L.up ? "Rising support line" : "Falling resistance line";
+    L.name = L.up ? RM("Rising support line", "Barhti hui support line") : RM("Falling resistance line", "Girti hui resistance line");
   });
   return (a._tl = out);
 }
@@ -1190,13 +1525,13 @@ function tlBreakCheck(a, L) {
   }
   const age = end - b0;
   let status, text;
-  const parts = [(best.candleOk ? "strong candle" : "weak candle") + " (closed " + best.beyond.toFixed(2) + " ATR beyond, body " + Math.round(best.body * 100) + "%)",
-    (best.volOk ? "volume " + best.volX.toFixed(1) + "x average" : "volume only " + best.volX.toFixed(1) + "x (need " + TL_VOL + "x)")];
-  if (closedBack) { status = "FAILED"; text = "Price closed back " + (up ? "above" : "below") + " the line, a false break."; }
-  else if (best.candleOk && best.volOk && holds) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + ", price is holding beyond the line" + (retest != null ? ", and the retest held" : "") + "."; }
-  else if (best.candleOk && best.volOk) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + "."; }
-  else if (end === b0 && (best.candleOk || best.volOk)) { status = "WAITING"; text = "Just broke on the last closed candle: " + parts.join(", ") + ". Wait for the next candle to hold."; }
-  else { status = "UNCONFIRMED"; text = "Broke the line but " + parts.join(", ") + ". Not a reliable break yet."; }
+  const parts = [RM((best.candleOk ? "strong candle" : "weak candle") + " (closed " + best.beyond.toFixed(2) + " ATR beyond, body " + Math.round(best.body * 100) + "%)", (best.candleOk ? "mazboot candle" : "kamzor candle") + " (" + best.beyond.toFixed(2) + " ATR paar close, body " + Math.round(best.body * 100) + "%)"),
+    RM(best.volOk ? "volume " + best.volX.toFixed(1) + "x average" : "volume only " + best.volX.toFixed(1) + "x (need " + TL_VOL + "x)", best.volOk ? "volume average ka " + best.volX.toFixed(1) + " guna" : "volume sirf " + best.volX.toFixed(1) + " guna (" + TL_VOL + " guna chahiye)")];
+  if (closedBack) { status = "FAILED"; text = RM("Price closed back " + (up ? "above" : "below") + " the line, a false break.", "Price wapas line ke " + (up ? "upar" : "neeche") + " close hui, yeh jhoota break hai."); }
+  else if (best.candleOk && best.volOk && holds) { status = "CONFIRMED"; text = RM("Confirmed: " + parts.join(", ") + ", price is holding beyond the line" + (retest != null ? ", and the retest held" : "") + ".", "Confirmed: " + parts.join(", ") + ", price line ke paar tiki hui hai" + (retest != null ? ", aur retest bhi tik gaya" : "") + "."); }
+  else if (best.candleOk && best.volOk) { status = "CONFIRMED"; text = RM("Confirmed: " + parts.join(", ") + ".", "Confirmed: " + parts.join(", ") + "."); }
+  else if (end === b0 && (best.candleOk || best.volOk)) { status = "WAITING"; text = RM("Just broke on the last closed candle: " + parts.join(", ") + ". Wait for the next candle to hold.", "Abhi aakhri band candle par toota: " + parts.join(", ") + ". Agli candle ke tikne ka intezar karein."); }
+  else { status = "UNCONFIRMED"; text = RM("Broke the line but " + parts.join(", ") + ". Not a reliable break yet.", "Line tooti lekin " + parts.join(", ") + ". Abhi bharosay ka break nahi."); }
   return { i: b0, ci: best.i, dir: dirName, age, candleOk: best.candleOk, volOk: best.volOk, volX: best.volX, beyond: best.beyond, holds: holds && !closedBack, retest, status, text };
 }
 
@@ -1211,8 +1546,8 @@ function trendObsOf(A, id) {
     obs.forEach(o => {
       if (o.bias !== want) return;
       const atr = a.atr[Math.min(o.i, end)] || a.atr[end] || 1e-9, pad = 0.4 * atr, how = [];
-      if (o.i >= L.p1.i - 3) { const y = L.yAt(o.i); if (y >= o.lo - pad && y <= o.hi + pad) how.push("formed on the trendline"); }
-      if (L.brkI == null && L.nowP >= o.lo - pad && L.nowP <= o.hi + pad) how.push("trendline runs through it now");
+      if (o.i >= L.p1.i - 3) { const y = L.yAt(o.i); if (y >= o.lo - pad && y <= o.hi + pad) how.push(RM("formed on the trendline", "trendline par bana")); }
+      if (L.brkI == null && L.nowP >= o.lo - pad && L.nowP <= o.hi + pad) how.push(RM("trendline runs through it now", "trendline abhi iske andar se guzarti hai"));
       if (!how.length) return;
       res.push({ id, line: L, ob: o, how, valid: o.valid, confirmed: !!(o.now && o.now.confirmed), live: o.live, quality: o.quality });
     });
@@ -2289,11 +2624,11 @@ function renderRetrace() {
   let h = '<h2>Retracement · ' + a.tf.name + '</h2>';
   if (!r) { $("retCard").innerHTML = h + '<div class="sub">Not enough swings yet to measure a leg.</div>'; return; }
   const dirTxt = r.dir === "up" ? "up (a pullback would be down)" : "down (a pullback would be up)";
-  h += '<div class="kv"><span>Latest leg</span><span class="mono">' + fp(r.from.p) + ' to ' + fp(r.to.p) + ', ' + (r.dir === "up" ? "up" : "down") + '</span></div>' +
+  h += '<div class="kv"><span>Latest leg</span><span class="mono">' + fp(r.from.p) + RM(' to ', ' se ') + fp(r.to.p) + ', ' + (r.dir === "up" ? RM("up", "upar") : RM("down", "neeche")) + '</span></div>' +
     '<div class="kv"><span>Retraced so far</span><span class="mono ' + (r.invalid ? "down-t" : "") + '">' + (r.depthNow * 100).toFixed(0) + '%' + (r.invalid ? " (leg fully reversed)" : r.depthNow < 0 ? " (new leg started)" : "") + '</span></div>' +
-    '<div class="kv"><span>Typical pullback depth (last ' + r.usedWin + ' candles)</span><span class="mono">' + (r.avgDepth == null ? "not enough pullbacks" : (r.avgDepth * 100).toFixed(0) + "% of the leg, " + r.nLegs + " pullbacks") + '</span></div>' +
+    '<div class="kv"><span>Typical pullback depth (last ' + r.usedWin + ' candles)</span><span class="mono">' + (r.avgDepth == null ? "not enough pullbacks" : (r.avgDepth * 100).toFixed(0) + RM("% of the leg, ", "% leg ka, ") + r.nLegs + RM(" pullbacks", " pullbacks")) + '</span></div>' +
     (r.typicalP != null ? '<div class="kv"><span>Where that would end</span><span class="mono">' + fp(r.typicalP) + ' (' + (100 * (r.typicalP / price - 1)).toFixed(2) + '%)</span></div>' : '') +
-    '<div class="kv"><span>Pullback zone (38.2% to 61.8%)</span><span class="mono">' + fp(r.golden[0]) + ' to ' + fp(r.golden[1]) + (r.inGolden ? ' <span class="pill up">PRICE IS INSIDE</span>' : '') + '</span></div>' +
+    '<div class="kv"><span>Pullback zone (38.2% to 61.8%)</span><span class="mono">' + fp(r.golden[0]) + RM(' to ', ' se ') + fp(r.golden[1]) + (r.inGolden ? ' <span class="pill up">PRICE IS INSIDE</span>' : '') + '</span></div>' +
     '<div class="tbl" style="margin-top:8px"><table style="min-width:0"><thead><tr><th>Level</th><th>Price</th><th>From price</th></tr></thead><tbody>' +
     r.levels.map(L => '<tr><td>' + (L.f * 100).toFixed(1) + '%</td><td class="num">' + fp(L.p) + '</td><td class="num">' + pc(100 * (L.p / price - 1)) + '</td></tr>').join("") + '</tbody></table></div>' +
     (r.conf.length ? '<div class="note"><b>Confluence:</b> ' + esc(r.conf.join(". ")) + '.</div>' : '<div class="note">No EMA or support/resistance zone lines up with the main retracement levels right now.</div>') +
@@ -2321,7 +2656,7 @@ function renderCandleRead() {
   const block = id => {
     const a = state.A[id];
     return '<h3>' + a.tf.name + ' · last 4 closed candles</h3><div class="tbl"><table><thead><tr><th>Candle</th><th>Colour</th><th>Size</th><th>Body</th><th>Upper wick</th><th>Lower wick</th><th>Volume</th><th>Read</th></tr></thead><tbody>' +
-      candleReport(a, 4).map((r, j) => '<tr><td>' + (j === 0 ? "Last closed" : j + " before") + ' <span class="mute-t">' + esc(fmtT(id, r.t)) + '</span></td><td class="' + (r.colour === "Green" ? "up-t" : r.colour === "Red" ? "down-t" : "mute-t") + '">' + r.colour + '</td><td>' + r.size + '</td>' +
+      candleReport(a, 4).map((r, j) => '<tr><td>' + (j === 0 ? RM("Last closed", "Aakhri band") : j + RM(" before", " pehle")) + ' <span class="mute-t">' + esc(fmtT(id, r.t)) + '</span></td><td class="' + (r.colour === "Green" ? "up-t" : r.colour === "Red" ? "down-t" : "mute-t") + '">' + r.colour + '</td><td>' + r.size + '</td>' +
         '<td class="num">' + r.bodyPct + '%</td><td class="num">' + r.upPct + '%</td><td class="num">' + r.lowPct + '%</td><td class="num">' + (r.vol == null ? "n/a" : r.vol.toFixed(2) + "x") + '</td>' +
         '<td class="wrapc">' + esc([r.note].concat(r.pats.map(p => p.name + " (" + p.bias + ")")).filter(Boolean).join("; ") || "-") + '</td></tr>').join("") + '</tbody></table></div>';
   };
@@ -2329,7 +2664,7 @@ function renderCandleRead() {
 }
 function renderPatterns() {
   const dots = n => "●".repeat(n) + "○".repeat(3 - n);
-  const when = (tf, t, off) => (off === 0 ? "Last closed" : off + " candle" + (off > 1 ? "s" : "") + " ago") + ' <span class="mute-t">(' + new Date(t).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + ")</span>";
+  const when = (tf, t, off) => (off === 0 ? RM("Last closed", "Aakhri band") : off + RM(" candle" + (off > 1 ? "s" : "") + " ago", " candle pehle")) + ' <span class="mute-t">(' + new Date(t).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + ")</span>";
   let body = "";
   SHOWN.forEach(t => {
     const a = state.A[t.id], last = a.candles.length - 2; let n = 0;
@@ -2349,7 +2684,7 @@ function renderPatterns() {
 function tfTabs2() {
   const el = $("tfTabs");
   el.innerHTML = SHOWN.map(t => '<button data-tf="' + t.id + '" aria-pressed="' + (t.id === state.chartTf) + '">' + t.name + '</button>').join("");
-  el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.chartTf = b.dataset.tf; store.set("chartTf", state.chartTf); tfTabs2(); renderRetrace(); renderBreaks(); renderEvents(); renderLiquidity(); }));
+  el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.chartTf = b.dataset.tf; store.set("chartTf", state.chartTf); tfTabs2(); renderRetrace(); renderBreaks(); renderEvents(); renderLiquidity(); romanize($("main")); }));
 }
 
 const READ_TXT = { reversal: ["REVERSAL", "warn"], break: ["TREND BREAK", "up"], trap: ["FALSE BREAK", "warn"], testing: ["TESTING", "mute"], none: ["NOT AT LEVEL", "mute"] };
@@ -2377,7 +2712,7 @@ function renderOB() {
   $("obCard").innerHTML = '<div class="status-row"><h2 style="margin:0">Order blocks</h2><span class="sub" style="margin:0">Valid = not broken and tested at most once. Confirmation is read on the lower timeframe.</span></div>' +
     '<div class="tbl"><table><thead><tr><th>Timeframe</th><th>Type</th><th>Zone</th><th>Quality</th><th>Valid now?</th><th>Candle confirmation</th><th>Why it counts</th><th>Age</th></tr></thead><tbody>' +
     (list.length ? list.map(o => '<tr><td><b>' + tfl(o.tf) + '</b></td><td><span class="pill ' + (o.bias === "bull" ? "up" : "down") + '">' + (o.kind === "breaker" ? "BREAKER " : "") + (o.bias === "bull" ? "BULLISH ▲" : "BEARISH ▼") + '</span></td>' +
-      '<td class="num">' + fp(o.lo) + ' to ' + fp(o.hi) + '</td><td>' + o.quality + ' <span class="mute-t mono">' + o.score + '/7</span></td>' +
+      '<td class="num">' + fp(o.lo) + RM(' to ', ' se ') + fp(o.hi) + '</td><td>' + o.quality + ' <span class="mute-t mono">' + o.score + '/7</span></td>' +
       '<td><span class="pill ' + (o.valid && !o.now.invalid ? "up" : "down") + '">' + (o.valid && !o.now.invalid ? "VALID" : "INVALID") + '</span> <span class="mute-t">' + esc(o.live) + '</span></td>' +
       '<td class="wrapc">' + (o.now.confirmed ? '<span class="up-t">Yes</span> on ' + tfl(o.now.confTf) + ': ' + esc(o.now.how.join(", ")) : o.now.inZone && o.valid ? 'Not yet (' + tfl(o.now.confTf) + ' candle needed)' : '-') + '</td>' +
       '<td class="wrapc">' + esc(o.tags.join(", ")) + (o.aligned ? ', with the bigger trend' : '') + '</td><td class="num">' + o.age + ' candles</td></tr>').join("") : '<tr><td colspan="8" class="mute-t">No order blocks found.</td></tr>') + '</tbody></table></div>' +
@@ -2410,7 +2745,7 @@ function renderChartPatterns() {
     (body || '<tr><td colspan="9" class="mute-t">No chart pattern found on 5m, 15m, 1H or 4H right now.</td></tr>') + '</tbody></table></div>' +
     '<div class="note">Entry level = neckline or trendline. Enter after a candle closes beyond it (confirmed), ideally on the retest. Target = the height of the pattern measured from the entry level. Patterns are rough shapes found from swing points, so always check them on the chart.</div>';
 }
-function renderAnalysis() { renderStruct(); renderLastN(); tfTabs2(); renderRetrace(); renderBreaks(); renderCandleRead(); renderPatterns(); renderKeyLevels(); renderTrend(); renderOB(); renderEvents(); renderLiquidity(); renderChartPatterns(); }
+function renderAnalysis() { setTimeout(() => romanize($("main")), 0); renderStruct(); renderLastN(); tfTabs2(); renderRetrace(); renderBreaks(); renderCandleRead(); renderPatterns(); renderKeyLevels(); renderTrend(); renderOB(); renderEvents(); renderLiquidity(); renderChartPatterns(); }
 boot({ file: "analysis.html", title: "Analysis", data: true, symbolBox: true, skeleton: ANALYSIS_SKELETON, render: renderAnalysis });
 
 </script>

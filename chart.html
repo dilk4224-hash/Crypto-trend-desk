@@ -159,12 +159,20 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 
 .h3 { margin: 10px 0 4px; font-size: 14px; }
 
+.confbanner { padding: 10px 12px; margin: 6px 0; border-radius: 8px; font-weight: 700; text-align: center; color: #fff; cursor: pointer; animation: cblink 0.9s steps(2, start) infinite; }
+.confbanner.up { background: var(--up); } .confbanner.down { background: var(--down); }
+@keyframes cblink { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .confbanner { animation: none; } }
+
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
 "use strict";
+/* Roman Urdu text on the Analysis page only. RM(english, romanUrdu) gives the Roman Urdu version there and English everywhere else. */
+const ROMAN = /analysis/i.test(location.pathname.split("/").pop() || "");
+const RM = (en, ur) => ROMAN ? ur : en;
 /* Shared settings, storage and small helpers. Loaded first on every page. */
 /* Weekly is removed. Daily (show:false) is never displayed but is always used as background bias. */
 const TFS = [
@@ -494,8 +502,9 @@ function lastN(a, N) {
   sc += bp - brp >= 1 ? 1 : brp - bp >= 1 ? -1 : 0;
   const bias = sc >= 3 ? "up" : sc <= -3 ? "down" : "range";
   const label = bias === "up" ? "Bullish" : bias === "down" ? "Bearish" : "Range";
-  const text = label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + (net >= 0 ? "+" : "") + net.toFixed(2) + "% over " + m + " candles, " + Math.round(pctAbove * 100) + "% closed above EMA 20, " +
-    (cnt.HH + cnt.HL) + " higher swings vs " + (cnt.LH + cnt.LL) + " lower swings";
+  const text = RM(label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + (net >= 0 ? "+" : "") + net.toFixed(2) + "% over " + m + " candles, " + Math.round(pctAbove * 100) + "% closed above EMA 20, " +
+    (cnt.HH + cnt.HL) + " higher swings vs " + (cnt.LH + cnt.LL) + " lower swings", label + " (" + (sc > 0 ? "+" : "") + sc + "/7): " + m + " candles mein " + (net >= 0 ? "+" : "") + net.toFixed(2) + "%, " + Math.round(pctAbove * 100) + "% EMA 20 ke upar close, " +
+    (cnt.HH + cnt.HL) + " ooncha swings aur " + (cnt.LH + cnt.LL) + " neecha swings");
   return (a._n[N] = { N: m, start, end, net, netATR, bull, bear, pctAbove, volRatio, cnt, pos, hi, lo, slopeATR, bp, brp, score: sc, bias, label, text, widthPct: (hi - lo) / ((hi + lo) / 2) * 100 });
 }
 
@@ -604,8 +613,8 @@ function retraceInfo(a) {
       const conf = [];
       const zs = zonesOf(a).zones.filter(z => z.n >= 2);
       levels.slice(0, 3).forEach(L => {
-        [["EMA 20", a.ema20[end]], ["EMA 50", a.ema50[end]]].forEach(([nm, v]) => { if (v != null && Math.abs(v - L.p) <= 0.3 * atr) conf.push(nm + " sits at the " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ")"); });
-        zs.forEach(z => { if (Math.abs(z.p - L.p) <= 0.3 * atr) conf.push("support/resistance zone " + fp(z.p) + " (x" + z.n + ") sits at the " + (L.f * 100).toFixed(1) + "% level"); });
+        [["EMA 20", a.ema20[end]], ["EMA 50", a.ema50[end]]].forEach(([nm, v]) => { if (v != null && Math.abs(v - L.p) <= 0.3 * atr) conf.push(RM(nm + " sits at the " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ")", nm + " " + (L.f * 100).toFixed(1) + "% level (" + fp(L.p) + ") par hai")); });
+        zs.forEach(z => { if (Math.abs(z.p - L.p) <= 0.3 * atr) conf.push(RM("support/resistance zone " + fp(z.p) + " (x" + z.n + ") sits at the " + (L.f * 100).toFixed(1) + "% level", "support/resistance zone " + fp(z.p) + " (x" + z.n + ") " + (L.f * 100).toFixed(1) + "% level par hai")); });
       });
       res = { dir, from, to, R, levels, golden: [gLo, gHi], depthNow, inGolden, invalid: depthNow > 1, avgDepth, nLegs: ds.length, usedWin, typicalP: avgDepth == null ? null : lv(avgDepth), conf };
     }
@@ -832,8 +841,8 @@ function liquidityOf(a) {
     const ch = structureEvents(a).find(e => e.kind === "CHoCH" && e.dir === dir && e.i > sw0.sweepI && e.i - sw0.sweepI <= 20);
     const ob = ch ? orderBlocksOf(a).find(o => o.kind === "ob" && o.valid && o.bias === (dir === "up" ? "bull" : "bear") && o.evI === ch.i) : null;
     model = { dir, sweep: sw0, choch: ch || null, ob: ob || null,
-      stage: ch ? "Sweep and CHoCH done. Wait for a pullback into the " + (ob ? "order block " + fp(ob.lo) + " to " + fp(ob.hi) : "order block or imbalance") + ", then enter " + (dir === "up" ? "long" : "short") + "."
-        : (sw0.side === "sell" ? "Sell-side liquidity at " : "Buy-side liquidity at ") + fp(sw0.p) + " was swept. Wait for a CHoCH " + (dir === "up" ? "up" : "down") + " before entering." };
+      stage: ch ? RM("Sweep and CHoCH done. Wait for a pullback into the " + (ob ? "order block " + fp(ob.lo) + " to " + fp(ob.hi) : "order block or imbalance") + ", then enter " + (dir === "up" ? "long" : "short") + ".", "Sweep aur CHoCH ho chuke. " + (ob ? "Order block " + fp(ob.lo) + " se " + fp(ob.hi) : "Order block ya imbalance") + " mein pullback ka intezar karein, phir " + (dir === "up" ? "long" : "short") + " entry lein.")
+        : RM((sw0.side === "sell" ? "Sell-side liquidity at " : "Buy-side liquidity at ") + fp(sw0.p) + " was swept. Wait for a CHoCH " + (dir === "up" ? "up" : "down") + " before entering.", (sw0.side === "sell" ? "Sell-side" : "Buy-side") + " liquidity " + fp(sw0.p) + " par sweep ho gayi. Entry se pehle " + (dir === "up" ? "upar" : "neeche") + " CHoCH ka intezar karein.") };
   }
   return (a._liq = { pools, live, sweeps, trend, model });
 }
@@ -860,7 +869,7 @@ function levelConfirm(A) {
     const base = { tf: L.tf, confTf: ct, p: L.p, n: L.n, side: L.side, dist: (L.p - price) / price * 100, read: "none", dir: null, strength: null, pats: [], text: "", age: null };
     const touchIdx = []; for (let q = e - 2; q <= e; q++) if (c[q].l <= L.p + tol && c[q].h >= L.p - tol) touchIdx.push(q);
     const crossed = [e - 2, e - 1, e].some(q => c[q].c > L.p + 0.15 * atrC) && [e - 2, e - 1, e].some(q => c[q].c < L.p - 0.15 * atrC);
-    if (!touchIdx.length && !crossed) { base.text = name + ": price is " + Math.abs(base.dist).toFixed(2) + "% away. Waiting for it to reach the level."; res.push(base); return; }
+    if (!touchIdx.length && !crossed) { base.text = RM(name + ": price is " + Math.abs(base.dist).toFixed(2) + "% away. Waiting for it to reach the level.", name + ": price level se " + Math.abs(base.dist).toFixed(2) + "% door hai. Level tak pohnchne ka intezar."); res.push(base); return; }
     const fromBelow = c[e - 3].c < L.p, volOf = q => C.volSma[q] ? c[q].v / C.volSma[q] : null;
     const bodyPct = q => { const P = candleParts(c[q]); return P.range ? P.body / P.range : 0; };
     const patsAt = (q, bias) => detectPatterns(C, q).filter(p => p.bias === bias && p.str >= 2).map(p => p.name);
@@ -874,12 +883,12 @@ function levelConfirm(A) {
       const backNow = fromBelow ? c[e].c < L.p : c[e].c > L.p;
       if (backNow) {
         res.push({ ...base, read: "trap", dir: fromBelow ? "down" : "up", strength: bodyPct(e) >= 0.4 ? "confirmed" : "early", pats: patsAt(e, bias), age: e - first,
-          text: name + ": false break. Price closed " + (fromBelow ? "above" : "below") + " it on the " + tfl(ct) + " chart and then back " + (fromBelow ? "below" : "above") + ". Reversal " + (fromBelow ? "down" : "up") + " is likely." });
+          text: RM(name + ": false break. Price closed " + (fromBelow ? "above" : "below") + " it on the " + tfl(ct) + " chart and then back " + (fromBelow ? "below" : "above") + ". Reversal " + (fromBelow ? "down" : "up") + " is likely.", name + ": jhoota break. Price " + tfl(ct) + " chart par level ke " + (fromBelow ? "upar" : "neeche") + " close hui aur phir wapas " + (fromBelow ? "neeche" : "upar") + " aa gayi. " + (fromBelow ? "Neeche" : "Upar") + " ka reversal mumkin hai.") });
       } else {
         const held = last === e && e - first >= 1 && (fromBelow ? c[e].l >= L.p - tol : c[e].h <= L.p + tol);
         const v = volOf(first), strong = (v != null && v >= 1.2) || bodyPct(first) >= 0.6;
         res.push({ ...base, read: "break", dir: fromBelow ? "up" : "down", strength: held ? "confirmed" : "early", pats: [], age: e - first,
-          text: name + ": TREND BREAK " + (fromBelow ? "up" : "down") + ". " + closesBeyond.length + " closed " + tfl(ct) + " candle" + (closesBeyond.length > 1 ? "s" : "") + " beyond it" + (strong ? " (strong candle / volume)" : "") + (held ? ", and it is holding. " : ". Wait for the next candle to hold. ") + "Best entry is the retest of " + fp(L.p) + "." });
+          text: RM(name + ": TREND BREAK " + (fromBelow ? "up" : "down") + ". " + closesBeyond.length + " closed " + tfl(ct) + " candle" + (closesBeyond.length > 1 ? "s" : "") + " beyond it" + (strong ? " (strong candle / volume)" : "") + (held ? ", and it is holding. " : ". Wait for the next candle to hold. ") + "Best entry is the retest of " + fp(L.p) + ".", name + ": TREND BREAK " + (fromBelow ? "upar" : "neeche") + ". " + closesBeyond.length + " band " + tfl(ct) + " candle(s) level ke paar" + (strong ? " (mazboot candle / volume)" : "") + (held ? ", aur tiki hui hain. " : ". Agli candle ke tikne ka intezar karein. ") + "Behtareen entry " + fp(L.p) + " ka retest hai.") });
       }
       return;
     }
@@ -895,9 +904,9 @@ function levelConfirm(A) {
     if (best) {
       const fresh = best.q >= e - 1;
       res.push({ ...base, read: "reversal", dir: fromBelow ? "down" : "up", strength: fresh && (best.pats.length || best.wick >= 0.5) ? "confirmed" : "early", pats: best.pats, age: e - best.q,
-        text: name + ": REVERSAL " + (fromBelow ? "down" : "up") + ". " + tfl(ct) + " candle rejected the level" + (best.wick >= 0.4 ? " with a " + Math.round(best.wick * 100) + "% " + (fromBelow ? "upper" : "lower") + " wick" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + "." });
+        text: RM(name + ": REVERSAL " + (fromBelow ? "down" : "up") + ". " + tfl(ct) + " candle rejected the level" + (best.wick >= 0.4 ? " with a " + Math.round(best.wick * 100) + "% " + (fromBelow ? "upper" : "lower") + " wick" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + ".", name + ": REVERSAL " + (fromBelow ? "neeche" : "upar") + ". " + tfl(ct) + " candle ne level ko radd kiya" + (best.wick >= 0.4 ? " (" + Math.round(best.wick * 100) + "% " + (fromBelow ? "upar" : "neeche") + " wali wick ke saath)" : "") + (best.pats.length ? " (" + best.pats.join(", ") + ")" : "") + ".") });
     } else {
-      res.push({ ...base, read: "testing", dir: null, strength: null, text: name + ": price is testing the level. No rejection and no close beyond it yet on the " + tfl(ct) + " chart. Wait." });
+      res.push({ ...base, read: "testing", dir: null, strength: null, text: RM(name + ": price is testing the level. No rejection and no close beyond it yet on the " + tfl(ct) + " chart. Wait.", name + ": price level ko test kar rahi hai. " + tfl(ct) + " chart par abhi na rejection hai na level ke paar close. Intezar karein.") });
     }
   });
   const rank = r => (r.read === "none" ? 3 : r.read === "testing" ? 2 : r.strength === "confirmed" ? 0 : 1);
@@ -1160,7 +1169,7 @@ function trendlinesOf(a) {
     L.near = Math.abs(price - L.nowP) <= 0.6 * atr;
     L.brk = L.brkI != null ? tlBreakCheck(a, L) : null;
     L.status = L.brk ? L.brk.status : "intact";
-    L.name = L.up ? "Rising support line" : "Falling resistance line";
+    L.name = L.up ? RM("Rising support line", "Barhti hui support line") : RM("Falling resistance line", "Girti hui resistance line");
   });
   return (a._tl = out);
 }
@@ -1190,13 +1199,13 @@ function tlBreakCheck(a, L) {
   }
   const age = end - b0;
   let status, text;
-  const parts = [(best.candleOk ? "strong candle" : "weak candle") + " (closed " + best.beyond.toFixed(2) + " ATR beyond, body " + Math.round(best.body * 100) + "%)",
-    (best.volOk ? "volume " + best.volX.toFixed(1) + "x average" : "volume only " + best.volX.toFixed(1) + "x (need " + TL_VOL + "x)")];
-  if (closedBack) { status = "FAILED"; text = "Price closed back " + (up ? "above" : "below") + " the line, a false break."; }
-  else if (best.candleOk && best.volOk && holds) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + ", price is holding beyond the line" + (retest != null ? ", and the retest held" : "") + "."; }
-  else if (best.candleOk && best.volOk) { status = "CONFIRMED"; text = "Confirmed: " + parts.join(", ") + "."; }
-  else if (end === b0 && (best.candleOk || best.volOk)) { status = "WAITING"; text = "Just broke on the last closed candle: " + parts.join(", ") + ". Wait for the next candle to hold."; }
-  else { status = "UNCONFIRMED"; text = "Broke the line but " + parts.join(", ") + ". Not a reliable break yet."; }
+  const parts = [RM((best.candleOk ? "strong candle" : "weak candle") + " (closed " + best.beyond.toFixed(2) + " ATR beyond, body " + Math.round(best.body * 100) + "%)", (best.candleOk ? "mazboot candle" : "kamzor candle") + " (" + best.beyond.toFixed(2) + " ATR paar close, body " + Math.round(best.body * 100) + "%)"),
+    RM(best.volOk ? "volume " + best.volX.toFixed(1) + "x average" : "volume only " + best.volX.toFixed(1) + "x (need " + TL_VOL + "x)", best.volOk ? "volume average ka " + best.volX.toFixed(1) + " guna" : "volume sirf " + best.volX.toFixed(1) + " guna (" + TL_VOL + " guna chahiye)")];
+  if (closedBack) { status = "FAILED"; text = RM("Price closed back " + (up ? "above" : "below") + " the line, a false break.", "Price wapas line ke " + (up ? "upar" : "neeche") + " close hui, yeh jhoota break hai."); }
+  else if (best.candleOk && best.volOk && holds) { status = "CONFIRMED"; text = RM("Confirmed: " + parts.join(", ") + ", price is holding beyond the line" + (retest != null ? ", and the retest held" : "") + ".", "Confirmed: " + parts.join(", ") + ", price line ke paar tiki hui hai" + (retest != null ? ", aur retest bhi tik gaya" : "") + "."); }
+  else if (best.candleOk && best.volOk) { status = "CONFIRMED"; text = RM("Confirmed: " + parts.join(", ") + ".", "Confirmed: " + parts.join(", ") + "."); }
+  else if (end === b0 && (best.candleOk || best.volOk)) { status = "WAITING"; text = RM("Just broke on the last closed candle: " + parts.join(", ") + ". Wait for the next candle to hold.", "Abhi aakhri band candle par toota: " + parts.join(", ") + ". Agli candle ke tikne ka intezar karein."); }
+  else { status = "UNCONFIRMED"; text = RM("Broke the line but " + parts.join(", ") + ". Not a reliable break yet.", "Line tooti lekin " + parts.join(", ") + ". Abhi bharosay ka break nahi."); }
   return { i: b0, ci: best.i, dir: dirName, age, candleOk: best.candleOk, volOk: best.volOk, volX: best.volX, beyond: best.beyond, holds: holds && !closedBack, retest, status, text };
 }
 
@@ -1211,8 +1220,8 @@ function trendObsOf(A, id) {
     obs.forEach(o => {
       if (o.bias !== want) return;
       const atr = a.atr[Math.min(o.i, end)] || a.atr[end] || 1e-9, pad = 0.4 * atr, how = [];
-      if (o.i >= L.p1.i - 3) { const y = L.yAt(o.i); if (y >= o.lo - pad && y <= o.hi + pad) how.push("formed on the trendline"); }
-      if (L.brkI == null && L.nowP >= o.lo - pad && L.nowP <= o.hi + pad) how.push("trendline runs through it now");
+      if (o.i >= L.p1.i - 3) { const y = L.yAt(o.i); if (y >= o.lo - pad && y <= o.hi + pad) how.push(RM("formed on the trendline", "trendline par bana")); }
+      if (L.brkI == null && L.nowP >= o.lo - pad && L.nowP <= o.hi + pad) how.push(RM("trendline runs through it now", "trendline abhi iske andar se guzarti hai"));
       if (!how.length) return;
       res.push({ id, line: L, ob: o, how, valid: o.valid, confirmed: !!(o.now && o.now.confirmed), live: o.live, quality: o.quality });
     });
@@ -2256,14 +2265,16 @@ const TOGGLES = [["tTl", "Trendlines + order blocks"], ["tStruct", "HH / HL / LH
 const CHART_SKELETON =
   '<section class="card"><div class="status-row"><h2 style="margin:0">Chart · <span id="chartSym"></span></h2><div id="chartInfo" class="sub" style="margin:0"></div></div>' +
   '<div class="status-row"><div class="tabs" id="tfTabs" role="group" aria-label="Chart timeframe"></div><div class="controls" id="toggles"></div></div>' +
+  '<div id="confBanner" class="confbanner" hidden role="status"></div>' +
   '<div class="controls" id="viewBtns" style="margin:6px 0"><button id="vOlder">← Older</button><button id="vNewer">Newer →</button><button id="vIn">Zoom in +</button><button id="vOut">Zoom out −</button><button id="vLatest">Latest ⏭</button><button id="vMode" class="primary"></button></div>' +
   '<div class="sub" style="margin:0 0 4px">Drag the chart left or right to move through time. Mouse wheel or two-finger pinch to zoom. Double-click or tap Latest to come back to now.</div>' +
-  '<div id="cvWrap" style="position:relative;touch-action:pan-y;cursor:grab;user-select:none"><canvas id="cv" height="440"></canvas><canvas id="cvx" style="position:absolute;left:0;top:0;pointer-events:none"></canvas></div><canvas id="cvr" height="90"></canvas>' +
+  '<div id="cvWrap" style="position:relative;touch-action:pan-y;cursor:grab;user-select:none"><canvas id="cv" height="620"></canvas><canvas id="cvx" style="position:absolute;left:0;top:0;pointer-events:none"></canvas></div><canvas id="cvr" height="110"></canvas>' +
   '<div class="legend"><span><i style="background:var(--ema20)"></i>EMA 20</span><span><i style="background:var(--ema50)"></i>EMA 50</span><span><i style="background:var(--ema200)"></i>EMA 200</span>' +
   '<span class="up-t">HH / HL = higher highs and lows</span><span class="down-t">LH / LL = lower highs and lows</span><span style="color:var(--accent)">Gold = broken level, retracement</span><span>Bottom panel: RSI 14</span><span>Thick line = 4H level, dashed = 1H level</span><span class="up-t">Green box = bullish order block</span><span class="down-t">Red box = bearish order block</span><span style="color:#3b82f6">BOS</span><span style="color:#a855f7">CHoCH</span><span style="color:#d97706">Liquidity</span><span style="color:#eab308">Gold outline = order block sitting on a trendline</span></div>' +
   '<div class="chips" id="srList"></div>' +
   '<div class="note">Swing labels: a swing high higher than the one before is HH, lower is LH. A swing low higher than the one before is HL, lower is LL. Uptrend = HH + HL. Downtrend = LH + LL. BRK = price closed beyond a support or resistance zone. RT = price came back to test it. Dashed support and resistance lines are zones price turned from at least twice. The retracement shading is the 38.2% to 61.8% pullback zone of the latest leg. Arrows mark strong candle patterns. Order blocks: the last opposite candle before a BOS or CHoCH, valid until price closes through it or it is tested twice. BOS = a close beyond the last swing in the trend direction, CHoCH = a close beyond the last swing against the trend. Full tables are on the <a href="analysis.html">Analysis</a> page.</div></section>';
 
+function chartH() { return Math.round(clamp(window.innerHeight * 0.78, 560, 860)); }
 function setupCanvas(cv, h) {
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth || 800;
   cv.width = Math.floor(w * dpr); cv.height = Math.floor(h * dpr); cv.style.height = h + "px";
@@ -2295,7 +2306,7 @@ function drawChart() {
   if (!cs.length) return;
   if (sv < 25) loadOlder(state.chartTf);
   const cUp = css("--up"), cDown = css("--down"), cGrid = css("--line"), cTxt = css("--muted"), cAcc = css("--accent"), cSurf = css("--surface"), cFg = css("--fg"), mono = css("--font-mono");
-  const P = setupCanvas($("cv"), 440), ctx = P.ctx;
+  const P = setupCanvas($("cv"), chartH()), ctx = P.ctx;
   const padR = 74, padT = 16, padB = 22, plotW = P.w - padR, plotH = P.h - padT - padB, volH = plotH * 0.14, priceH = plotH - volH - 6;
   let lo = Infinity, hi = -Infinity;
   cs.forEach((k, j) => {
@@ -2531,7 +2542,7 @@ function drawChart() {
   state.vg = { sv, N, plotW, lo, hi, padT, priceH, n, a, y0: padT, W: P.w, H: P.h };
   drawCross();
   /* RSI panel */
-  const R = setupCanvas($("cvr"), 90), rc = R.ctx, rh = R.h - 12, ry = v => 6 + (100 - v) / 100 * rh;
+  const R = setupCanvas($("cvr"), 110), rc = R.ctx, rh = R.h - 12, ry = v => 6 + (100 - v) / 100 * rh;
   rc.clearRect(0, 0, R.w, R.h); rc.font = "11px " + mono; rc.lineWidth = 1;
   [30, 50, 70].forEach(v => {
     rc.strokeStyle = cGrid; rc.setLineDash(v === 50 ? [2, 4] : []); rc.beginPath(); rc.moveTo(0, Math.round(ry(v)) + 0.5); rc.lineTo(plotW, Math.round(ry(v)) + 0.5); rc.stroke();
@@ -2557,7 +2568,7 @@ function drawChart() {
   chartPatternsOf(a).slice(0, 3).forEach(p => chips.push('<span class="chip ' + (p.bias === "bull" ? "u" : "d") + '">' + esc(p.name) + ' ' + p.status + '</span>'));
   $("srList").innerHTML = chips.join("");
 }
-function renderChartPage() { $("chartSym").textContent = state.symbol + (state.demo ? " (demo data)" : ""); chartTabs(); setModeBtn(); drawChart(); }
+function renderChartPage() { checkConfirm(); $("chartSym").textContent = state.symbol + (state.demo ? " (demo data)" : ""); chartTabs(); setModeBtn(); drawChart(); }
 function setModeBtn() { const b = $("vMode"); if (b) b.textContent = store.get("tlOnly", "1") === "1" ? "Trendline view (tap for all overlays)" : "All overlays (tap for trendline view)"; }
 let rafT = 0; function redraw() { if (rafT) return; rafT = requestAnimationFrame(() => { rafT = 0; drawChart(); }); }
 
@@ -2583,7 +2594,7 @@ function zoomAt(frac, newN) {
 function drawCross() {
   const cx = $("cvx"), vg = state.vg, c = state.cross; if (!cx || !vg) return;
   const dpr = window.devicePixelRatio || 1; cx.width = Math.floor(vg.W * dpr); cx.height = Math.floor(vg.H * dpr); cx.style.width = vg.W + "px"; cx.style.height = vg.H + "px";
-  const ctx = cx.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, vg.W, vg.H);
+  const ctx = cx.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, vg.W, vg.H); drawBlink(ctx, vg);
   if (!c || c.x < 0 || c.x > vg.plotW || c.y < vg.padT || c.y > vg.padT + vg.priceH) return;
   const mono = css("--font-mono"), fg = css("--fg"), surf = css("--surface"), txt = css("--muted"); ctx.font = "11px " + mono;
   const idx = Math.floor(vg.sv + c.x / vg.plotW * vg.N), price = vg.hi - (c.y - vg.padT) / vg.priceH * (vg.hi - vg.lo), k = vg.a.candles[idx];
@@ -2630,7 +2641,36 @@ function setupMove() {
 let rzT; window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(drawChart, 120); });
 try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(drawChart, 50)); } catch (e) { /* ignore */ }
 
-boot({ file: "chart.html", title: "Chart", data: true, symbolBox: true, skeleton: CHART_SKELETON, render: renderChartPage, init: () => { setupToggles(); setupMove(); }, live: true, onLive: () => redraw() });
+/* ---------- Blink when a signal confirmation candle forms ---------- */
+const CONF = { key: null, until: 0, ev: null, loop: 0 };
+function confirmEvent(sg) {
+  if (!sg || !/SETUP$/.test(sg.verdict)) return null;
+  const z = sg.zone, tf = (sg.trigTfs && sg.trigTfs[0]) || (z && z.confTf) || "5m";
+  return { key: state.symbol + (sg.L ? "L" : "S") + (z ? z.type + Math.round(z.lo * 1000) : ""), dir: sg.L ? "LONG" : "SHORT", tf, price: sg.price, zone: z ? z.type : "" };
+}
+function beep() { try { const AC = window.AudioContext || window.webkitAudioContext, c = new AC(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = 0.15; o.start(); o.stop(c.currentTime + 0.35); } catch (e) { /* sound not allowed yet */ } try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { /* ignore */ } }
+function blinkOn() { return Date.now() < CONF.until && CONF.ev; }
+function updateBanner() {
+  const el = $("confBanner"); if (!el) return;
+  if (!blinkOn()) { el.hidden = true; return; }
+  const e = CONF.ev; el.hidden = false; el.className = "confbanner " + (e.dir === "LONG" ? "up" : "down");
+  el.textContent = "● " + e.dir + " confirmation candle formed on " + tfl(e.tf) + (e.zone ? " at the " + e.zone.toLowerCase() : "") + " · price " + fp(state.sig.price) + " · tap to dismiss";
+}
+function blinkLoop() { CONF.loop = 0; if (!blinkOn()) { updateBanner(); drawCross(); return; } drawCross(); CONF.loop = requestAnimationFrame(blinkLoop); }
+function checkConfirm() {
+  const e = confirmEvent(state.sig);
+  if (!e) { CONF.key = null; if (CONF.until && Date.now() >= CONF.until) updateBanner(); return; }
+  if (e.key !== CONF.key) { CONF.key = e.key; CONF.ev = e; CONF.until = Date.now() + 120000; beep(); updateBanner(); if (!CONF.loop) CONF.loop = requestAnimationFrame(blinkLoop); }
+}
+function drawBlink(ctx, vg) {
+  if (!blinkOn() || Math.floor(Date.now() / 450) % 2) return;
+  const a = vg.a, i = a.candles.length - 2, k = a.candles[i]; if (!k) return;
+  const x = (i - vg.sv + 0.5) / vg.N * vg.plotW, y = vg.padT + (vg.hi - (k.h + k.l) / 2) / (vg.hi - vg.lo) * vg.priceH, col = CONF.ev.dir === "LONG" ? css("--up") : css("--down");
+  ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 16 + 4 * Math.sin(Date.now() / 120), 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = col; ctx.font = "bold 12px " + css("--font-mono"); ctx.textAlign = "center"; ctx.fillText(CONF.ev.dir + " CONFIRMED", Math.min(vg.plotW - 60, Math.max(60, x)), y - 26);
+}
+function liveChart() { const now = Date.now(); if (!state.lastSig || now - state.lastSig > 5000) { state.lastSig = now; try { state.sig = buildSignal(state.A); checkConfirm(); } catch (e) { /* keep the old signal */ } } redraw(); }
+boot({ file: "chart.html", title: "Chart", data: true, symbolBox: true, skeleton: CHART_SKELETON, render: renderChartPage, init: () => { setupToggles(); setupMove(); $("confBanner").addEventListener("click", () => { CONF.until = 0; updateBanner(); }); }, live: true, onLive: liveChart });
 
 </script>
 </body>
