@@ -164,6 +164,68 @@ ul.news small { display: block; color: var(--muted); font-size: 12px; }
 @keyframes cblink { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .confbanner { animation: none; } }
 
+/* ===== Modern dashboard look (glass cards, soft gradients, rounded controls) ===== */
+:root {
+  --bg: #f4f6fb; --surface: #ffffff; --surface-2: #edf0f7; --fg: #121826; --muted: #62708a; --line: #e1e6f0;
+  --accent: #5b6cff; --accent-2: #14b8a6; --up: #0f9d73; --down: #e5484d; --warn: #d98a12;
+  --ema20: #d98a12; --ema50: #2f6fe0; --ema200: #8b5cf6;
+  --r: 16px; --shadow: 0 1px 2px rgba(18,24,38,.05), 0 8px 28px rgba(18,24,38,.06);
+  --font-body: "Inter", "SF Pro Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #090d18; --surface: #111729; --surface-2: #19213a; --fg: #e8ecf8; --muted: #8e9bba; --line: #222c48; --accent: #7c8bff; --accent-2: #2dd4bf; --up: #2dd4a0; --down: #ff6b72; --warn: #f2b13a; --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 12px 36px rgba(0,0,0,.35); --ema20: #f2b13a; --ema50: #6aa8ff; --ema200: #b69cff; }
+}
+:root[data-theme="dark"] { --bg: #090d18; --surface: #111729; --surface-2: #19213a; --fg: #e8ecf8; --muted: #8e9bba; --line: #222c48; --accent: #7c8bff; --accent-2: #2dd4bf; --up: #2dd4a0; --down: #ff6b72; --warn: #f2b13a; --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 12px 36px rgba(0,0,0,.35); }
+body { background: radial-gradient(1200px 520px at 12% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%), radial-gradient(900px 480px at 100% 0%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 55%), var(--bg); background-attachment: fixed; letter-spacing: -0.005em; }
+h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; background: linear-gradient(90deg, var(--fg), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+h2 { font-size: 11.5px; letter-spacing: 0.12em; }
+.card { border-radius: var(--r); box-shadow: var(--shadow); border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(8px); }
+.nav { top: 8px; margin: 0; padding: 5px; gap: 4px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--surface) 80%, transparent); backdrop-filter: blur(14px); box-shadow: var(--shadow); scrollbar-width: none; }
+.nav::-webkit-scrollbar { display: none; }
+.nav a { border: 0; border-radius: 999px; padding: 8px 14px; font-size: 13px; }
+.nav a:hover { background: var(--surface-2); }
+.nav a[aria-current="page"] { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--accent-2))); color: #fff; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent); }
+input, select, button { border-radius: 10px; border-color: var(--line); background: var(--surface-2); }
+button { transition: transform .08s ease, background .15s ease, box-shadow .15s ease; }
+button:hover:not(:disabled) { background: color-mix(in srgb, var(--surface-2) 70%, var(--accent)); }
+button:active:not(:disabled) { transform: scale(.97); }
+button.primary { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--accent-2))); border-color: transparent; color: #fff; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+button.primary:hover:not(:disabled) { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.tabs { background: var(--surface-2); padding: 3px; border-radius: 12px; display: inline-flex; }
+.tabs button { background: transparent; border: 0; border-radius: 9px; }
+.tabs button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.lvl { border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); }
+.chip { border-radius: 999px; padding: 3px 10px; border: 1px solid var(--line); }
+.pill { border-radius: 999px; }
+.score { height: 8px; border-radius: 99px; } .score i { background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 99px; }
+.verdict { font-size: 26px; font-weight: 700; }
+.banner { border-radius: 12px; }
+th { background: var(--surface); }
+tr[data-pair]:hover td { background: var(--surface-2); }
+.tvbox, .codebox { border-radius: 12px; }
+.confbanner { border-radius: 12px; }
+/* hero strip on the Signals page */
+.hero { display: grid; grid-template-columns: minmax(0,1.4fr) repeat(auto-fit, minmax(120px,1fr)); gap: 12px; padding: 18px; border-radius: 20px; border: 1px solid var(--line); box-shadow: var(--shadow);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, var(--surface)), var(--surface) 55%, color-mix(in srgb, var(--accent-2) 12%, var(--surface))); }
+.hero .h-main small, .hero .h-t small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
+.hero .h-sym { font-size: 14px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
+.hero .h-price { font-size: 34px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; }
+.hero .h-t { background: color-mix(in srgb, var(--surface) 70%, transparent); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.hero .h-t b { font-size: 18px; font-weight: 700; font-family: var(--font-mono); }
+.ring { --v: 0; --c: var(--accent); width: 54px; height: 54px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--v) * 1%), var(--surface-2) 0); display: grid; place-items: center; }
+.ring::after { content: attr(data-t); width: 42px; height: 42px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font: 700 13px var(--font-mono); }
+/* chart indicator panel */
+.indp { border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px; margin: 8px 0; background: var(--surface-2); }
+.indgrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); margin-top: 8px; }
+.indbox { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.indhead { color: var(--fg) !important; font-size: 14px !important; }
+.indnum { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.indnum input { width: 72px; padding: 4px 6px; text-align: right; }
+.indlv { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+#cvWrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+#cvWrap canvas { border-radius: 12px; }
+@media (max-width: 640px) { .hero { grid-template-columns: 1fr 1fr; } .hero .h-main { grid-column: 1 / -1; } .hero .h-price { font-size: 30px; } .nav a { padding: 8px 11px; } }
+
 </style>
 </head>
 <body>
@@ -2162,7 +2224,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && LI
 "use strict";
 /* Page frame shared by every page: title, menu, symbol box, banner, timers. Each page calls boot(). */
 const NAV = [["index.html", "Signals"], ["chart.html", "Chart"], ["analysis.html", "Analysis"], ["tradingview.html", "TradingView"], ["sessions.html", "Sessions"],
-  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["market.html", "Big money"], ["flow.html", "Money flow"], ["log.html", "Trade log"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
+  ["cpi.html", "CPI"], ["jobs.html", "US jobs"], ["fed.html", "Fed rates"], ["us-news.html", "US news"], ["world-news.html", "World news"], ["tune.html", "Tune & check"], ["market.html", "Big money"], ["flow.html", "Money flow"], ["log.html", "Trade log"], ["backtest.html", "Backtest"], ["alerts.html", "Alerts"]];
 
 function showBanner(msg) { const b = $("banner"); if (!b) return; b.hidden = !msg; b.textContent = msg; }
 function buildShell(cfg) {
@@ -2259,15 +2321,262 @@ function renderExchange(id) {
 </script>
 <script>
 "use strict";
+/* Three chart indicators with their own settings (defaults follow the popular TradingView versions):
+   1) Fibonacci retracement (auto leg from the latest swing high and swing low)
+   2) Smart Money Concepts: BOS / CHoCH (swing and internal), order blocks, fair value gaps, equal highs/lows, premium / discount, strong / weak high and low
+   3) Liquidity sweep: pivot highs and lows hold resting stops; a wick through the level that closes back inside is a sweep.
+   They compute straight from the candles of the timeframe on the chart, and are drawn on the chart canvas. */
+const IND_DEF = {
+  fib: { on: true, len: 10, minAtr: 1.5, entry: 0.618, stop: 1, target: 0, trade: true, lv: { "0": 1, "0.236": 1, "0.382": 1, "0.5": 1, "0.618": 1, "0.705": 0, "0.786": 1, "1": 1 }, ext: false, golden: true },
+  smc: { on: true, swing: 50, internal: 5, showSwing: true, showInternal: true, ob: true, obN: 5, fvg: true, fvgN: 4, fvgMin: 0.15, eq: true, eqLen: 3, eqTol: 0.1, pd: true },
+  liq: { on: true, len: 5, back: 1, showSwept: true, sweptN: 6, showActive: true, activeN: 6 }
+};
+function indCfg() {
+  if (indCfg._c) return indCfg._c;
+  let saved = {}; try { saved = JSON.parse(store.get("indCfg", "{}")) || {}; } catch (e) { saved = {}; }
+  const out = {}; Object.keys(IND_DEF).forEach(k => { out[k] = Object.assign({}, IND_DEF[k], saved[k] || {}); if (k === "fib") out.fib.lv = Object.assign({}, IND_DEF.fib.lv, (saved.fib || {}).lv || {}); });
+  return (indCfg._c = out);
+}
+function indSave() { try { store.set("indCfg", JSON.stringify(indCfg())); } catch (e) { /* ignore */ } }
+function indReset() { indCfg._c = null; store.set("indCfg", "{}"); }
+
+/* pivot highs and lows: a candle whose high (low) is the highest (lowest) of `len` candles on each side. Confirmed `len` candles later. */
+function pivotsOf(c, len, end) {
+  const H = [], L = [];
+  for (let j = len; j + len <= end; j++) {
+    let ph = true, pl = true;
+    for (let k = 1; k <= len && (ph || pl); k++) {
+      if (c[j - k].h >= c[j].h || c[j + k].h > c[j].h) ph = false;
+      if (c[j - k].l <= c[j].l || c[j + k].l < c[j].l) pl = false;
+    }
+    if (ph) H.push({ i: j, p: c[j].h });
+    if (pl) L.push({ i: j, p: c[j].l });
+  }
+  return { H, L };
+}
+
+/* ---------- 1) Fibonacci retracement ---------- */
+function fibOf(a, cfg) {
+  const c = a.candles, end = c.length - 2, atr = a.atr[end] || (c[end].h - c[end].l) || 1e-9;
+  const pv = pivotsOf(c, Math.max(2, cfg.len | 0), end), h = pv.H[pv.H.length - 1], l = pv.L[pv.L.length - 1];
+  if (!h || !l) return null;
+  const up = h.i > l.i, from = up ? l : h, to = up ? h : l, range = Math.abs(h.p - l.p);
+  if (range < cfg.minAtr * atr) return null;
+  const price = c[c.length - 1].c, lv = [];
+  Object.keys(cfg.lv).filter(k => cfg.lv[k]).map(Number).sort((x, y) => x - y).forEach(f => lv.push({ f, p: up ? to.p - range * f : to.p + range * f }));
+  const ext = cfg.ext ? [1.272, 1.618].map(f => ({ f, p: up ? from.p + range * f : from.p - range * f, ext: true })) : [];
+  const gz = [up ? to.p - range * 0.65 : to.p + range * 0.65, up ? to.p - range * 0.618 : to.p + range * 0.618];
+  const depth = up ? (to.p - price) / range : (price - to.p) / range;
+  const at = a.atr[end] || 0, ent = up ? to.p - range * cfg.entry : to.p + range * cfg.entry, stp = (up ? to.p - range * cfg.stop : to.p + range * cfg.stop) + (up ? -0.1 : 0.1) * at, tgt = cfg.target === 0 ? to.p : (up ? from.p + range * cfg.target : from.p - range * cfg.target);
+  return { up, from, to, range, lv, ext, gz, depth, ent, stp, tgt, inGolden: price >= Math.min(gz[0], gz[1]) && price <= Math.max(gz[0], gz[1]) };
+}
+
+/* ---------- 2) Smart Money Concepts ---------- */
+function smcStruct(c, len, end) {
+  const pv = pivotsOf(c, len, end), hAt = new Map(pv.H.map(p => [p.i + len, p])), lAt = new Map(pv.L.map(p => [p.i + len, p]));
+  const ev = [], obs = []; let swH = null, swL = null, trend = 0;
+  for (let i = 0; i <= end; i++) {
+    if (hAt.has(i)) swH = { i: hAt.get(i).i, p: hAt.get(i).p, x: false };
+    if (lAt.has(i)) swL = { i: lAt.get(i).i, p: lAt.get(i).p, x: false };
+    if (swH && !swH.x && c[i].c > swH.p) {
+      ev.push({ kind: trend === -1 ? "CHoCH" : "BOS", dir: "up", p: swH.p, j: swH.i, i }); trend = 1; swH.x = true;
+      let m = swH.i; for (let k = swH.i; k < i; k++) if (c[k].l < c[m].l) m = k;
+      obs.push({ bias: "bull", lo: c[m].l, hi: c[m].h, i: m, born: i, end: null });
+    }
+    if (swL && !swL.x && c[i].c < swL.p) {
+      ev.push({ kind: trend === 1 ? "CHoCH" : "BOS", dir: "down", p: swL.p, j: swL.i, i }); trend = -1; swL.x = true;
+      let m = swL.i; for (let k = swL.i; k < i; k++) if (c[k].h > c[m].h) m = k;
+      obs.push({ bias: "bear", lo: c[m].l, hi: c[m].h, i: m, born: i, end: null });
+    }
+  }
+  obs.forEach(o => { for (let k = o.born + 1; k <= end; k++) { if (o.bias === "bull" ? c[k].c < o.lo : c[k].c > o.hi) { o.end = k; break; } } });
+  const pvH = pv.H[pv.H.length - 1], pvL = pv.L[pv.L.length - 1];
+  return { ev, obs, trend, top: pvH || null, bot: pvL || null };
+}
+function smcOf(a, cfg) {
+  const c = a.candles, end = c.length - 2, atrAt = i => a.atr[i] || a.atr[end] || (c[i].h - c[i].l) || 1e-9;
+  const sw = cfg.showSwing ? smcStruct(c, Math.max(2, cfg.swing | 0), end) : null, it = cfg.showInternal ? smcStruct(c, Math.max(2, cfg.internal | 0), end) : null;
+  const fvg = [];
+  if (cfg.fvg) for (let i = 2; i <= end; i++) {
+    const at = atrAt(i);
+    if (c[i].l > c[i - 2].h && c[i - 1].c > c[i - 1].o && c[i].l - c[i - 2].h >= cfg.fvgMin * at) fvg.push({ bias: "bull", lo: c[i - 2].h, hi: c[i].l, i: i - 1, end: null });
+    if (c[i].h < c[i - 2].l && c[i - 1].c < c[i - 1].o && c[i - 2].l - c[i].h >= cfg.fvgMin * at) fvg.push({ bias: "bear", lo: c[i].h, hi: c[i - 2].l, i: i - 1, end: null });
+  }
+  fvg.forEach(g => { for (let k = g.i + 2; k <= end; k++) { if (g.bias === "bull" ? c[k].l <= g.lo : c[k].h >= g.hi) { g.end = k; break; } } });
+  const eq = [];
+  if (cfg.eq) {
+    const pv = pivotsOf(c, Math.max(2, cfg.eqLen | 0), end);
+    [["EQH", pv.H], ["EQL", pv.L]].forEach(([kind, arr]) => { for (let k = 1; k < arr.length; k++) { const p = arr[k - 1], q = arr[k]; if (Math.abs(p.p - q.p) < cfg.eqTol * atrAt(q.i)) eq.push({ kind, p: (p.p + q.p) / 2, i1: p.i, i2: q.i }); } });
+  }
+  const base = sw && sw.trend ? sw : (it || sw);
+  return { sw, it, obs: [], fvg, eq, trend: base ? base.trend : 0, top: base && base.top, bot: base && base.bot };
+}
+
+/* ---------- 3) Liquidity sweep ---------- */
+function liqSweepOf(a, cfg) {
+  const c = a.candles, end = c.length - 2, len = Math.max(2, cfg.len | 0), pv = pivotsOf(c, len, end), out = [];
+  const one = (side, p) => {
+    const buy = side === "buy"; let res = null;
+    for (let k = p.i + len + 1; k <= end && !res; k++) {
+      if (buy ? c[k].h > p.p : c[k].l < p.p) {
+        let ok = false, kk = k;
+        for (let m = k; m <= Math.min(end, k + cfg.back); m++) { if (buy ? c[m].c <= p.p : c[m].c >= p.p) { ok = true; kk = m; break; } }
+        res = { i: k, back: kk, type: ok ? "sweep" : "break" };
+      }
+    }
+    out.push({ side, p: p.p, i0: p.i, sw: res });
+  };
+  pv.H.forEach(p => one("buy", p)); pv.L.forEach(p => one("sell", p));
+  return out;
+}
+
+function proCache(a, key, fn) {
+  const sig = key + "|" + a.candles.length + "|" + a.candles[a.candles.length - 1].c + "|" + JSON.stringify(indCfg());
+  a._pro = a._pro || {}; if (a._pro[key] && a._pro[key].sig === sig) return a._pro[key].v;
+  const v = fn(); a._pro[key] = { sig, v }; return v;
+}
+
+/* Draw all three on the chart. env carries the chart geometry and helpers from drawChart. */
+function drawPro(ctx, E) {
+  const cfg = indCfg(), a = E.a, c = a.candles, n = c.length, end = n - 2, summary = [];
+  const { xi, y, lo, hi, plotW, padT, priceH, s0, sv, N, cUp, cDown, cSurf, cTxt, tag, mono, colW } = E;
+  const GOLD = "#eab308", BLUE = "#3b82f6", PURP = "#a855f7", AMB = "#d97706", right = Math.min(plotW, xi(sv + N) + colW);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, padT, plotW, priceH); ctx.clip(); ctx.font = "bold 10px " + mono;
+  const vis = (p) => p >= lo && p <= hi, xv = i => Math.max(0, xi(Math.max(i, s0)) - (i >= s0 ? colW / 2 : 0));
+  /* ---- Fibonacci ---- */
+  if (cfg.fib.on) {
+    const F = proCache(a, "fib", () => fibOf(a, cfg.fib));
+    if (F) {
+      const x0 = xv(F.from.i), col = F.up ? cUp : cDown;
+      if (cfg.fib.golden) { ctx.globalAlpha = 0.16; ctx.fillStyle = GOLD; const yA = y(Math.max(F.gz[0], F.gz[1])), yB = y(Math.min(F.gz[0], F.gz[1])); ctx.fillRect(x0, yA, right - x0, Math.max(3, yB - yA)); ctx.globalAlpha = 1; }
+      ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]); ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(xi(F.from.i), y(F.from.p)); ctx.lineTo(xi(F.to.i), y(F.to.p)); ctx.stroke(); ctx.setLineDash([]);
+      F.lv.concat(F.ext).forEach(L => {
+        if (!vis(L.p)) return;
+        const yy = Math.round(y(L.p)) + 0.5, key = L.f === 0.618 || L.f === 0.5 ? GOLD : L.f === 0 || L.f === 1 ? cTxt : L.ext ? PURP : BLUE;
+        ctx.strokeStyle = key; ctx.lineWidth = L.f === 0.618 ? 1.6 : 1; ctx.globalAlpha = L.f === 0 || L.f === 1 ? 0.7 : 0.9; ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(right, yy); ctx.stroke(); ctx.globalAlpha = 1;
+        tag(ctx, "Fib " + L.f + "  " + fp(L.p), right - 4, yy - 3, key, cSurf, "right");
+      });
+      if (cfg.fib.trade) [[F.ent, "ENTRY " + cfg.fib.entry, F.up ? cUp : cDown], [F.stp, "STOP", cDown === (F.up ? cUp : cDown) ? cUp : cDown], [F.tgt, "TARGET", cUp]].forEach(([pp, lab, cc], q) => {
+        if (!vis(pp)) return; const yy = Math.round(y(pp)) + 0.5; ctx.strokeStyle = q === 1 ? cDown : q === 2 ? cUp : GOLD; ctx.lineWidth = 2; ctx.setLineDash(q === 0 ? [] : [8, 4]); ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(right, yy); ctx.stroke(); ctx.setLineDash([]);
+        tag(ctx, "FIB " + lab + " " + fp(pp), x0 + 6, yy - 3, q === 1 ? cDown : q === 2 ? cUp : GOLD, cSurf, "left");
+      });
+      summary.push("Fib " + (F.up ? "up" : "down") + " leg " + fp(F.from.p) + " to " + fp(F.to.p) + ", price retraced " + Math.round(F.depth * 100) + "%" + (F.inGolden ? " (inside the golden zone 0.618 to 0.65)" : ""));
+    } else summary.push("Fib: no clear leg yet");
+  }
+  /* ---- SMC ---- */
+  if (cfg.smc.on) {
+    const S = proCache(a, "smc", () => smcOf(a, cfg.smc));
+    const events = (st, dashed, big) => {
+      if (!st) return;
+      st.ev.filter(e => e.i >= s0 && e.i <= end && vis(e.p)).slice(-8).forEach(e => {
+        const x1 = xi(Math.max(e.j, s0)), x2 = xi(e.i), yy = Math.round(y(e.p)) + 0.5, col = e.dir === "up" ? (e.kind === "CHoCH" ? PURP : BLUE) : (e.kind === "CHoCH" ? PURP : BLUE);
+        ctx.strokeStyle = col; ctx.lineWidth = big ? 1.8 : 1; ctx.setLineDash(dashed ? [3, 3] : []); ctx.beginPath(); ctx.moveTo(x1, yy); ctx.lineTo(x2, yy); ctx.stroke(); ctx.setLineDash([]);
+        tag(ctx, (big ? "" : "i-") + e.kind + (e.dir === "up" ? " ▲" : " ▼"), (x1 + x2) / 2, e.dir === "up" ? yy - 4 : yy + 15, col, cSurf, "center");
+      });
+    };
+    /* order blocks: from swing and internal structure, newest unmitigated */
+    if (cfg.smc.ob) {
+      const all = []; [S.sw, S.it].forEach((st, q) => { if (st) st.obs.forEach(o => all.push(Object.assign({ internal: q === 1 }, o))); });
+      all.filter(o => o.end == null && o.hi >= lo && o.lo <= hi).sort((p, q) => q.born - p.born).slice(0, cfg.smc.obN).forEach(o => {
+        const x0 = xv(o.i), col = o.bias === "bull" ? cUp : cDown, y1 = y(o.hi), hh = Math.max(3, y(o.lo) - y1);
+        ctx.globalAlpha = o.internal ? 0.12 : 0.2; ctx.fillStyle = col; ctx.fillRect(x0, y1, right - x0, hh); ctx.globalAlpha = 1;
+        ctx.strokeStyle = col; ctx.lineWidth = o.internal ? 1 : 1.6; ctx.strokeRect(x0 + 0.5, y1, right - x0 - 1, hh);
+        tag(ctx, (o.internal ? "iOB" : "OB") + (o.bias === "bull" ? "▲" : "▼"), x0 + 4, y1 + 11, col, cSurf, "left");
+      });
+    }
+    if (cfg.smc.fvg) {
+      S.fvg.filter(g => g.end == null && g.hi >= lo && g.lo <= hi).slice(-cfg.smc.fvgN).forEach(g => {
+        const x0 = xv(g.i), col = g.bias === "bull" ? cUp : cDown, y1 = y(g.hi), hh = Math.max(2, y(g.lo) - y1);
+        ctx.globalAlpha = 0.14; ctx.fillStyle = col; ctx.fillRect(x0, y1, right - x0, hh); ctx.globalAlpha = 1;
+        ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.strokeRect(x0 + 0.5, y1, right - x0 - 1, hh); ctx.setLineDash([]);
+        tag(ctx, "FVG" + (g.bias === "bull" ? "▲" : "▼"), right - 4, y1 + 11, col, cSurf, "right");
+      });
+    }
+    if (cfg.smc.eq) {
+      S.eq.filter(q => q.i2 >= s0 - 40 && vis(q.p)).slice(-4).forEach(q => {
+        const yy = Math.round(y(q.p)) + 0.5; ctx.strokeStyle = AMB; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(xi(Math.max(q.i1, s0)), yy); ctx.lineTo(xi(q.i2), yy); ctx.stroke(); ctx.setLineDash([]);
+        tag(ctx, q.kind, xi(q.i2) + 4, yy + (q.kind === "EQH" ? -3 : 13), AMB, cSurf, "left");
+      });
+    }
+    events(S.it, true, false); events(S.sw, false, true);
+    if (cfg.smc.pd && S.top && S.bot) {
+      const T = Math.max(S.top.p, S.bot.p), B = Math.min(S.top.p, S.bot.p), R = T - B, eqP = B + R / 2, x0 = xv(Math.min(S.top.i, S.bot.i));
+      if (R > 0) {
+        [[T, T - R * 0.05, cDown, "Premium"], [B + R * 0.05, B, cUp, "Discount"]].forEach(([p1, p2, col, nm]) => { ctx.globalAlpha = 0.1; ctx.fillStyle = col; ctx.fillRect(x0, y(p1), right - x0, Math.max(2, y(p2) - y(p1))); ctx.globalAlpha = 1; if (vis((p1 + p2) / 2)) tag(ctx, nm, x0 + 4, y(p1) + 11, col, cSurf, "left"); });
+        if (vis(eqP)) { ctx.strokeStyle = cTxt; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(x0, Math.round(y(eqP)) + 0.5); ctx.lineTo(right, Math.round(y(eqP)) + 0.5); ctx.stroke(); ctx.setLineDash([]); tag(ctx, "Equilibrium " + fp(eqP), right - 4, y(eqP) - 3, cTxt, cSurf, "right"); }
+        const bull = S.trend === 1;
+        if (vis(T)) tag(ctx, (bull ? "Weak High " : "Strong High ") + fp(T), right - 4, y(T) - 3, cDown, cSurf, "right");
+        if (vis(B)) tag(ctx, (bull ? "Strong Low " : "Weak Low ") + fp(B), right - 4, y(B) + 13, cUp, cSurf, "right");
+      }
+    }
+    summary.push("SMC trend " + (S.trend === 1 ? "bullish" : S.trend === -1 ? "bearish" : "not set yet") + (S.sw && S.sw.ev.length ? ", last swing " + S.sw.ev[S.sw.ev.length - 1].kind + " " + S.sw.ev[S.sw.ev.length - 1].dir : ""));
+  }
+  /* ---- Liquidity sweep ---- */
+  if (cfg.liq.on) {
+    const Q = proCache(a, "liq", () => liqSweepOf(a, cfg.liq)), price = c[n - 1].c;
+    if (cfg.liq.showActive) {
+      Q.filter(q => !q.sw && vis(q.p) && q.i0 <= end).sort((p, q) => Math.abs(p.p - price) - Math.abs(q.p - price)).slice(0, cfg.liq.activeN).forEach(q => {
+        const yy = Math.round(y(q.p)) + 0.5, buy = q.side === "buy"; ctx.strokeStyle = AMB; ctx.lineWidth = 1; ctx.setLineDash([1, 3]); ctx.beginPath(); ctx.moveTo(xv(q.i0), yy); ctx.lineTo(right, yy); ctx.stroke(); ctx.setLineDash([]);
+        tag(ctx, (buy ? "BSL " : "SSL ") + fp(q.p), right - 4, yy + (buy ? -3 : 13), AMB, cSurf, "right");
+      });
+    }
+    if (cfg.liq.showSwept) {
+      const sw = Q.filter(q => q.sw && q.sw.type === "sweep" && q.sw.i >= s0 && vis(q.p)).sort((p, q) => q.sw.i - p.sw.i).slice(0, cfg.liq.sweptN);
+      sw.forEach(q => {
+        const buy = q.side === "buy", yy = Math.round(y(q.p)) + 0.5, px = xi(q.sw.i), k = c[q.sw.i];
+        ctx.strokeStyle = AMB; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(xv(q.i0), yy); ctx.lineTo(px, yy); ctx.stroke();
+        const ex = buy ? y(k.h) : y(k.l); ctx.fillStyle = AMB; ctx.beginPath(); ctx.arc(px, ex, 4, 0, Math.PI * 2); ctx.fill();
+        tag(ctx, (buy ? "BSL SWEPT ▼" : "SSL SWEPT ▲"), px, buy ? ex - 9 : ex + 20, AMB, cSurf, "center");
+      });
+      const last = Q.filter(q => q.sw && q.sw.type === "sweep").sort((p, q) => q.sw.i - p.sw.i)[0];
+      summary.push(last ? "Last sweep: " + (last.side === "buy" ? "buy-side liquidity taken above " : "sell-side liquidity taken below ") + fp(last.p) + " (" + (end - last.sw.i) + " candles ago)" : "Liquidity: no sweep found in the loaded candles");
+    }
+  }
+  ctx.restore(); ctx.font = "11px " + mono;
+  return summary;
+}
+
+/* Settings panel */
+const IND_UI = [
+  ["fib", "Fibonacci retracement", [["len", "Pivot length (candles each side)", "num", 2, 50], ["minAtr", "Smallest leg (ATR)", "num", 0, 20], ["entry", "Entry level (0.5 to 0.786)", "num", 0.2, 0.95], ["stop", "Stop level (1 = leg start)", "num", 0.7, 1.3], ["target", "Target (0 = leg end, or 1.272 / 1.618)", "num", 0, 3], ["trade", "Draw entry, stop and target", "chk"], ["golden", "Shade golden zone (0.618 to 0.65)", "chk"], ["ext", "Show extensions 1.272 / 1.618", "chk"]]],
+  ["smc", "Smart Money Concepts (SMC)", [["swing", "Swing structure length", "num", 3, 100], ["internal", "Internal structure length", "num", 2, 30], ["showSwing", "Swing BOS / CHoCH", "chk"], ["showInternal", "Internal BOS / CHoCH", "chk"], ["ob", "Order blocks", "chk"], ["obN", "Order blocks to show", "num", 1, 12], ["fvg", "Fair value gaps", "chk"], ["fvgN", "Gaps to show", "num", 1, 12], ["fvgMin", "Smallest gap (ATR)", "num", 0, 3], ["eq", "Equal highs / lows", "chk"], ["eqLen", "Equal H/L pivot length", "num", 2, 20], ["eqTol", "Equal H/L tolerance (ATR)", "num", 0.01, 1], ["pd", "Premium / discount, strong / weak", "chk"]]],
+  ["liq", "Liquidity sweep", [["len", "Pivot length (candles each side)", "num", 2, 30], ["back", "Must close back within (candles)", "num", 0, 5], ["showSwept", "Show swept levels", "chk"], ["sweptN", "Swept levels to show", "num", 1, 20], ["showActive", "Show resting levels (BSL / SSL)", "chk"], ["activeN", "Resting levels to show", "num", 1, 20]]]
+];
+function indPanelHtml() {
+  const cfg = indCfg();
+  return '<details id="indPanel" class="indp"><summary>Indicators: Fibonacci · SMC · Liquidity sweep <span class="mute-t">(settings)</span></summary><div class="indgrid">' +
+    IND_UI.map(([k, title, rows]) => '<div class="indbox"><label class="chk indhead"><input type="checkbox" data-ind="' + k + '.on"' + (cfg[k].on ? " checked" : "") + '> <b>' + title + '</b></label>' +
+      rows.map(([f, lab, t, mn, mx]) => t === "chk" ? '<label class="chk"><input type="checkbox" data-ind="' + k + '.' + f + '"' + (cfg[k][f] ? " checked" : "") + '> ' + lab + '</label>' :
+        '<label class="indnum"><span>' + lab + '</span><input type="number" inputmode="decimal" step="any" min="' + mn + '" max="' + mx + '" data-ind="' + k + '.' + f + '" value="' + cfg[k][f] + '"></label>').join("") +
+      (k === "fib" ? '<div class="indlv">Levels: ' + Object.keys(cfg.fib.lv).map(l => '<label class="chk"><input type="checkbox" data-ind="fib.lv.' + l + '"' + (cfg.fib.lv[l] ? " checked" : "") + '> ' + l + '</label>').join("") + '</div>' : '') + '</div>').join("") +
+    '</div><div class="controls" style="margin-top:8px"><button id="indReset">Reset to default settings</button></div></details>';
+}
+function indPanelWire(redraw) {
+  const p = document.getElementById("indPanel"); if (!p) return;
+  p.addEventListener("change", e => {
+    const el = e.target; if (!el.dataset || !el.dataset.ind) return;
+    const path = el.dataset.ind.split("."), cfg = indCfg(); let o = cfg;
+    for (let i = 0; i < path.length - 1; i++) o = o[path[i]];
+    const key = path[path.length - 1], v = el.type === "checkbox" ? (el.checked ? 1 : 0) : +el.value;
+    if (el.type !== "checkbox" && !isFinite(v)) return;
+    o[key] = el.type === "checkbox" ? (path[1] === "lv" ? v : !!v) : v;
+    indSave(); redraw();
+  });
+  document.getElementById("indReset").addEventListener("click", () => { indReset(); p.outerHTML = indPanelHtml(); indPanelWire(redraw); redraw(); });
+}
+
+</script>
+<script>
+"use strict";
 /* Chart page: candles with EMAs, swing structure (HH, HL, LH, LL), support and resistance, breaks and retests,
    retracement levels, candle patterns, and shading for the last 50 and 100 candles. Drawn on a canvas. */
 const TOGGLES = [["tTl", "Trendlines + order blocks"], ["tStruct", "HH / HL / LH / LL"], ["tSR", "Support and resistance"], ["tBrk", "Breaks and retests"], ["tPat", "Candle patterns"], ["tHtf", "4H / 1H levels"], ["tOB", "Order blocks"], ["tBos", "BOS / CHoCH"], ["tLiq", "Liquidity"], ["tCp", "Chart patterns"]];
 const CHART_SKELETON =
   '<section class="card"><div class="status-row"><h2 style="margin:0">Chart · <span id="chartSym"></span></h2><div id="chartInfo" class="sub" style="margin:0"></div></div>' +
   '<div class="status-row"><div class="tabs" id="tfTabs" role="group" aria-label="Chart timeframe"></div><div class="controls" id="toggles"></div></div>' +
-  '<div id="confBanner" class="confbanner" hidden role="status"></div>' +
-  '<div class="controls" id="viewBtns" style="margin:6px 0"><button id="vOlder">← Older</button><button id="vNewer">Newer →</button><button id="vIn">Zoom in +</button><button id="vOut">Zoom out −</button><button id="vLatest">Latest ⏭</button><button id="vMode" class="primary"></button></div>' +
-  '<div class="sub" style="margin:0 0 4px">Drag the chart left or right to move through time. Mouse wheel or two-finger pinch to zoom. Double-click or tap Latest to come back to now.</div>' +
+  '<div id="indHost"></div><div id="confBanner" class="confbanner" hidden role="status"></div>' +
+  '<div class="controls" id="viewBtns" style="margin:6px 0"><button id="vOlder">← Older</button><button id="vNewer">Newer →</button><button id="vIn">Zoom in +</button><button id="vOut">Zoom out −</button><button id="vUp">Price ▲</button><button id="vDown">Price ▼</button><button id="vTall">Stretch +</button><button id="vShort">Stretch −</button><button id="vFit">Auto fit</button><button id="vFree" aria-pressed="false"></button><button id="vLatest">Latest ⏭</button><button id="vMode" class="primary"></button></div>' +
+  '<div class="sub" style="margin:0 0 4px">Move it like an exchange chart: drag to move through time (mouse: also up and down), mouse wheel or two-finger pinch to zoom time, drag or wheel on the price scale on the right to stretch the price, drag the time scale at the bottom to zoom time. On a phone turn Free move ON to drag in any direction. Arrow keys, + and − also work. Double-click the chart to reset, double-click the price scale for Auto fit.</div>' +
   '<div id="cvWrap" style="position:relative;touch-action:pan-y;cursor:grab;user-select:none"><canvas id="cv" height="620"></canvas><canvas id="cvx" style="position:absolute;left:0;top:0;pointer-events:none"></canvas></div><canvas id="cvr" height="110"></canvas>' +
   '<div class="legend"><span><i style="background:var(--ema20)"></i>EMA 20</span><span><i style="background:var(--ema50)"></i>EMA 50</span><span><i style="background:var(--ema200)"></i>EMA 200</span>' +
   '<span class="up-t">HH / HL = higher highs and lows</span><span class="down-t">LH / LL = lower highs and lows</span><span style="color:var(--accent)">Gold = broken level, retracement</span><span>Bottom panel: RSI 14</span><span>Thick line = 4H level, dashed = 1H level</span><span class="up-t">Green box = bullish order block</span><span class="down-t">Red box = bearish order block</span><span style="color:#3b82f6">BOS</span><span style="color:#a855f7">CHoCH</span><span style="color:#d97706">Liquidity</span><span style="color:#eab308">Gold outline = order block sitting on a trendline</span></div>' +
@@ -2299,7 +2608,7 @@ function drawChart() {
   const a = state.A[state.chartTf]; if (!a || !$("cv")) return;
   const tlOnly = store.get("tlOnly", "1") === "1";
   const T = id => $(id) && $(id).checked && (!tlOnly || id === "tTl");
-  const V = state.view || (state.view = { count: 130, off: 0 });
+  const V = state.view || (state.view = { count: 130, off: 0, ys: 1, yc: 0 }); if (V.ys == null) { V.ys = 1; V.yc = 0; }
   const n = a.candles.length, end = n - 2, N = clamp(Math.round(V.count), 20, 400);
   V.count = N; V.off = clamp(V.off, -Math.floor(N * 0.4), Math.max(0, n - 12));
   const r = n - V.off, sv = r - N, s0 = Math.max(0, sv), cs = a.candles.slice(s0, Math.min(r, n));
@@ -2314,6 +2623,7 @@ function drawChart() {
     [a.ema20[s0 + j], a.ema50[s0 + j]].forEach(v => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } });
   });
   const pad = (hi - lo) * 0.07; lo -= pad; hi += pad;
+  if (V.ys !== 1 || V.yc) { const rg = hi - lo, md = (hi + lo) / 2 + (V.yc || 0) * rg, hf = rg / 2 * (V.ys || 1); lo = md - hf; hi = md + hf; }
   const y = v => padT + (hi - v) / (hi - lo) * priceH, x = j => (j + s0 - sv + 0.5) / N * plotW, xi = i => (i - sv + 0.5) / N * plotW, cw = Math.max(1, plotW / N * 0.66), colW = plotW / N;
   ctx.clearRect(0, 0, P.w, P.h); ctx.font = "11px " + mono;
 
@@ -2502,6 +2812,7 @@ function drawChart() {
   }
   /* last price and date labels */
   ctx.restore();
+  state.proSum = drawPro(ctx, { a, xi, y, lo, hi, plotW, padT, priceH, s0, sv, N, cUp, cDown, cSurf, cTxt, tag: tagText, mono, colW });
   const price = a.candles[n - 1].c;
   ctx.strokeStyle = cTxt; ctx.setLineDash([3, 3]); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, y(price)); ctx.lineTo(plotW, y(price)); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = cFg; ctx.textAlign = "left"; ctx.fillText(fp(price), plotW + 6, y(price) - 4);
@@ -2536,6 +2847,7 @@ function drawChart() {
   trendlinesOf(a).forEach(Ln => chips.push('<span class="chip ' + (Ln.up ? "u" : "d") + '" title="' + esc(Ln.brk ? Ln.brk.text : "Line intact") + '">' + Ln.name + ' ' + fp(Ln.nowP) + ' x' + Ln.touches + (Ln.brk ? ' · break ' + Ln.brk.status.toLowerCase() : Ln.near ? ' · price at line' : '') + '</span>'));
   trendObsOf(state.A, state.chartTf).slice(0, 3).forEach(t => chips.push('<span class="chip n">OB on trendline ' + fp(t.ob.lo) + '-' + fp(t.ob.hi) + ' · ' + esc(t.ob.live) + '</span>'));
   chartPatternsOf(a).slice(0, 3).forEach(p => chips.push('<span class="chip ' + (p.bias === "bull" ? "u" : "d") + '">' + esc(p.name) + ' ' + p.status + '</span>'));
+  (state.proSum || []).forEach(t => chips.unshift('<span class="chip n">' + esc(t) + '</span>'));
   $("srList").innerHTML = chips.join("");
 }
 function renderChartPage() { checkConfirm(); $("chartSym").textContent = state.symbol + (state.demo ? " (demo data)" : ""); chartTabs(); setModeBtn(); drawChart(); }
@@ -2578,35 +2890,80 @@ function drawCross() {
   }
 }
 function setupMove() {
-  const w = $("cvWrap"), V = () => state.view || (state.view = { count: 130, off: 0 }), ptrs = new Map(); let drag = null, pinch = null;
+  const w = $("cvWrap"), V = () => { const v = state.view || (state.view = { count: 130, off: 0, ys: 1, yc: 0 }); if (v.ys == null) { v.ys = 1; v.yc = 0; } return v; }, ptrs = new Map(); let drag = null, pinch = null, fling = 0, hist = [];
+  const free = () => store.get("freeMove", "0") === "1";
+  const applyFree = () => { w.style.touchAction = free() ? "none" : "pan-y"; const b = $("vFree"); if (b) { b.setAttribute("aria-pressed", free()); b.textContent = free() ? "Free move: ON (drag any way)" : "Free move: OFF (tap to turn on)"; } };
   const rel = e => { const b = w.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+  const region = e => { const vg = state.vg, r = rel(e); if (!vg) return "plot"; return r.x > vg.plotW ? "axisY" : r.y > vg.padT + vg.priceH ? "axisX" : "plot"; };
+  const stopFling = () => { if (fling) { cancelAnimationFrame(fling); fling = 0; } };
+  const runFling = vx => {
+    stopFling(); let last = performance.now();
+    const f = now => { const dt = now - last; last = now; const vg = state.vg; if (!vg) return; V().off += vx * dt / (vg.plotW / vg.N); vx *= Math.pow(0.94, dt / 16); redraw(); if (Math.abs(vx) > 0.02) fling = requestAnimationFrame(f); else fling = 0; };
+    fling = requestAnimationFrame(f);
+  };
   w.addEventListener("pointerdown", e => {
+    stopFling();
     try { w.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 1) { drag = { x: e.clientX, off: V().off }; w.style.cursor = "grabbing"; }
+    if (ptrs.size === 1) { drag = { x: e.clientX, y: e.clientY, off: V().off, yc: V().yc, ys: V().ys, n: V().count, reg: region(e), px: rel(e).x }; hist = [{ t: e.timeStamp, x: e.clientX }]; w.style.cursor = "grabbing"; }
     else if (ptrs.size === 2) { const [p, q] = [...ptrs.values()]; pinch = { d: Math.hypot(p.x - q.x, p.y - q.y) || 1, n: V().count }; drag = null; }
   });
   w.addEventListener("pointermove", e => {
     const vg = state.vg; if (!vg) return;
     if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && ptrs.size === 2) { const [p, q] = [...ptrs.values()], d = Math.hypot(p.x - q.x, p.y - q.y) || 1, b = w.getBoundingClientRect(); zoomAt(clamp(((p.x + q.x) / 2 - b.left) / vg.plotW, 0, 1), pinch.n * pinch.d / d); return; }
-    if (drag && ptrs.size === 1) { V().off = drag.off + Math.round((e.clientX - drag.x) / (vg.plotW / vg.N)); redraw(); }
+    if (drag && ptrs.size === 1) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y, v = V();
+      if (drag.reg === "axisY") { v.ys = clamp(drag.ys * Math.exp(dy * 0.006), 0.08, 12); }
+      else if (drag.reg === "axisX") { zoomAt(clamp(drag.px / vg.plotW, 0, 1), drag.n * Math.exp(-dx * 0.006)); }
+      else {
+        v.off = drag.off + Math.round(dx / (vg.plotW / vg.N));
+        if (free() || e.pointerType === "mouse") v.yc = drag.yc + dy / vg.priceH * drag.ys;
+      }
+      hist.push({ t: e.timeStamp, x: e.clientX }); if (hist.length > 6) hist.shift(); redraw();
+    }
     if (e.pointerType === "mouse" || drag) { state.cross = rel(e); drawCross(); }
+    if (e.pointerType === "mouse" && !drag) { const r = region(e); w.style.cursor = r === "axisY" ? "ns-resize" : r === "axisX" ? "ew-resize" : "grab"; }
   });
-  const up = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (ptrs.size === 1) { const [p] = [...ptrs.values()]; drag = { x: p.x, off: V().off }; } if (!ptrs.size) { drag = null; w.style.cursor = "grab"; if (e.pointerType !== "mouse") { state.cross = null; drawCross(); } } };
+  const up = e => {
+    const was = drag; ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null;
+    if (ptrs.size === 1) { const [p] = [...ptrs.values()]; drag = { x: p.x, y: p.y, off: V().off, yc: V().yc, ys: V().ys, n: V().count, reg: "plot", px: 0 }; }
+    if (!ptrs.size) {
+      drag = null; w.style.cursor = "grab";
+      if (was && was.reg === "plot" && hist.length > 1) { const a = hist[0], b = hist[hist.length - 1], dt = b.t - a.t; if (dt > 0 && dt < 120) { const vx = (b.x - a.x) / dt; if (Math.abs(vx) > 0.25) runFling(vx); } }
+      if (e.pointerType !== "mouse") { state.cross = null; drawCross(); }
+    }
+  };
   w.addEventListener("pointerup", up); w.addEventListener("pointercancel", up);
   w.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { state.cross = null; drawCross(); } });
   w.addEventListener("wheel", e => {
-    const vg = state.vg; if (!vg) return; e.preventDefault();
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey) { V().off += Math.round(-(e.deltaX || e.deltaY) / (vg.plotW / vg.N) * 1.5); redraw(); }
-    else zoomAt(clamp(rel(e).x / vg.plotW, 0, 1), vg.N * Math.exp(e.deltaY * 0.0015));
+    const vg = state.vg; if (!vg) return; e.preventDefault(); const r = rel(e);
+    if (r.x > vg.plotW) { V().ys = clamp(V().ys * Math.exp(e.deltaY * 0.0015), 0.08, 12); redraw(); }
+    else if (e.ctrlKey || e.altKey) { V().yc += -e.deltaY / vg.priceH * V().ys * 0.6; redraw(); }
+    else if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey) { V().off += Math.round(-(e.deltaX || e.deltaY) / (vg.plotW / vg.N) * 1.5); redraw(); }
+    else zoomAt(clamp(r.x / vg.plotW, 0, 1), vg.N * Math.exp(e.deltaY * 0.0015));
   }, { passive: false });
-  w.addEventListener("dblclick", () => { state.view = { count: 130, off: 0 }; redraw(); });
+  const fit = () => { const v = V(); v.ys = 1; v.yc = 0; redraw(); };
+  w.addEventListener("dblclick", e => { if (region(e) === "axisY") fit(); else { state.view = { count: 130, off: 0, ys: 1, yc: 0 }; redraw(); } });
+  w.tabIndex = 0; w.setAttribute("aria-label", "Chart. Arrow keys move, plus and minus zoom, 0 resets.");
+  w.addEventListener("keydown", e => {
+    const v = V(), k = e.key; let used = true;
+    if (k === "ArrowLeft") v.off += Math.max(1, Math.round(v.count * 0.1)); else if (k === "ArrowRight") v.off -= Math.max(1, Math.round(v.count * 0.1));
+    else if (k === "ArrowUp") v.yc += 0.08 * v.ys; else if (k === "ArrowDown") v.yc -= 0.08 * v.ys;
+    else if (k === "+" || k === "=") zoomAt(0.5, v.count * 0.8); else if (k === "-") zoomAt(0.5, v.count / 0.8);
+    else if (k === "0") { state.view = { count: 130, off: 0, ys: 1, yc: 0 }; } else if (k === "Home") v.off = Math.max(0, state.vg ? state.vg.n - 30 : 0); else if (k === "End") v.off = 0; else used = false;
+    if (used) { e.preventDefault(); redraw(); }
+  });
   const step = f => () => { const v = V(); v.off += Math.round(f * v.count); redraw(); };
   $("vOlder").addEventListener("click", step(0.5)); $("vNewer").addEventListener("click", step(-0.5));
   $("vIn").addEventListener("click", () => zoomAt(0.5, V().count * 0.7)); $("vOut").addEventListener("click", () => zoomAt(0.5, V().count / 0.7));
+  $("vUp").addEventListener("click", () => { V().yc += 0.25 * V().ys; redraw(); }); $("vDown").addEventListener("click", () => { V().yc -= 0.25 * V().ys; redraw(); });
+  $("vTall").addEventListener("click", () => { V().ys = clamp(V().ys * 0.75, 0.08, 12); redraw(); }); $("vShort").addEventListener("click", () => { V().ys = clamp(V().ys / 0.75, 0.08, 12); redraw(); });
+  $("vFit").addEventListener("click", fit);
+  $("vFree").addEventListener("click", () => { store.set("freeMove", free() ? "0" : "1"); applyFree(); });
   $("vLatest").addEventListener("click", () => { V().off = 0; redraw(); });
   $("vMode").addEventListener("click", () => { store.set("tlOnly", store.get("tlOnly", "1") === "1" ? "0" : "1"); setModeBtn(); redraw(); });
+  applyFree();
 }
 let rzT; window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(drawChart, 120); });
 try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(drawChart, 50)); } catch (e) { /* ignore */ }
@@ -2640,7 +2997,7 @@ function drawBlink(ctx, vg) {
   ctx.fillStyle = col; ctx.font = "bold 12px " + css("--font-mono"); ctx.textAlign = "center"; ctx.fillText(CONF.ev.dir + " CONFIRMED", Math.min(vg.plotW - 60, Math.max(60, x)), y - 26);
 }
 function liveChart() { const now = Date.now(); if (!state.lastSig || now - state.lastSig > 5000) { state.lastSig = now; try { state.sig = buildSignal(state.A); checkConfirm(); } catch (e) { /* keep the old signal */ } } redraw(); }
-boot({ file: "chart.html", title: "Chart", data: true, symbolBox: true, skeleton: CHART_SKELETON, render: renderChartPage, init: () => { setupToggles(); setupMove(); $("confBanner").addEventListener("click", () => { CONF.until = 0; updateBanner(); }); }, live: true, onLive: liveChart });
+boot({ file: "chart.html", title: "Chart", data: true, symbolBox: true, skeleton: CHART_SKELETON, render: renderChartPage, init: () => { setupToggles(); $("indHost").innerHTML = indPanelHtml(); indPanelWire(redraw); setupMove(); $("confBanner").addEventListener("click", () => { CONF.until = 0; updateBanner(); }); }, live: true, onLive: liveChart });
 
 </script>
 </body>
