@@ -225,6 +225,9 @@ tr[data-pair]:hover td { background: var(--surface-2); }
 #cvWrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 #cvWrap canvas { border-radius: 12px; }
 @media (max-width: 640px) { .hero { grid-template-columns: 1fr 1fr; } .hero .h-main { grid-column: 1 / -1; } .hero .h-price { font-size: 30px; } .nav a { padding: 8px 11px; } }
+.pill.mk { font-size: 10px; padding: 1px 7px; letter-spacing: .06em; font-weight: 700; vertical-align: middle; border: 1px solid transparent; }
+.pill.mk.spot { background: color-mix(in srgb, var(--ema50) 18%, transparent); color: var(--ema50); border-color: color-mix(in srgb, var(--ema50) 45%, transparent); }
+.pill.mk.futures { background: color-mix(in srgb, var(--ema200) 18%, transparent); color: var(--ema200); border-color: color-mix(in srgb, var(--ema200) 45%, transparent); }
 
 </style>
 </head>
@@ -246,6 +249,7 @@ const TFS = [
 ];
 const SHOWN = TFS.filter(t => t.show);
 const WINDOWS = [50, 100]; // "last N candles" analysis windows
+const FHOSTS = ["https://fapi.binance.com", "https://fapi1.binance.com", "https://fapi2.binance.com", "https://fapi3.binance.com"];
 const HOSTS = ["https://api.binance.com", "https://data-api.binance.vision", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com"];
 const STABLE = new Set(["USDT","USDC","FDUSD","TUSD","DAI","USDE","PYUSD","USDP","BUSD","USD1","USDD","GUSD","EURC","EUR","AEUR","XUSD","RLUSD","BFUSD","USDS","WBTC","WBETH","STETH","WSTETH","WEETH","BETH","CBBTC"]);
 const FALLBACK = ["BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK","DOT","LTC","BCH","NEAR","UNI","ATOM","ETC","XLM","FIL","APT","ARB","OP","INJ","SUI","AAVE","HBAR","ICP","POL","TON","ALGO"];
@@ -257,7 +261,7 @@ const SESSIONS = [
 ];
 
 const state = {
-  symbol: "BTCUSDT", chartTf: "15m", A: {}, demo: false, sig: null,
+  symbol: "BTCUSDT", market: "spot", uniS: null, uniF: { list: [], map: {}, verified: false }, chartTf: "15m", A: {}, demo: false, sig: null,
   uni: { list: [], map: {}, verified: false }, scan: { rows: [], at: null, running: false },
   alerts: [], sessStats: [], prevAct: {}, news: { us: null, world: null, crypto: null }
 };
@@ -1327,9 +1331,16 @@ function trendlineCheck(A, L) {
 /* Market data: Binance candles and the Binance token list (all USDT tokens). */
 const CG = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false&page=";
 
-async function jget(path) {
+/* Market aware request: "spot" uses /api/v3 on the spot hosts, "futures" uses the same call under /fapi/v1 on the USDT-M futures hosts. */
+const mkt = m => (m || state.market) === "futures" ? "futures" : "spot";
+const mkLabel = m => mkt(m) === "futures" ? "FUTURES" : "SPOT";
+/* On spot there is no short: LONG reads BUY and SHORT reads SELL (exit what you hold). On futures it stays LONG / SHORT. */
+const vtxt = (v, m) => mkt(m) === "spot" ? String(v).replace("LONG", "BUY").replace("SHORT", "SELL") : String(v);
+const mkBadge = m => '<span class="pill mk ' + mkt(m) + '" title="' + (mkt(m) === "futures" ? "USDT-M perpetual futures: you can go long or short" : "Spot market: you can only buy, or sell what you already hold") + '">' + mkLabel(m) + '</span>';
+async function jgetM(path, m) { return mkt(m) === "futures" ? jget(path.replace("/api/v3/", "/fapi/v1/"), FHOSTS) : jget(path); }
+async function jget(path, hosts) {
   let err;
-  for (const host of HOSTS) {
+  for (const host of (hosts || HOSTS)) {
     try { const r = await fetch(host + path); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); } catch (e) { err = e; }
   }
   throw err;
@@ -1337,21 +1348,21 @@ async function jget(path) {
 /* One Binance kline row. q = quote volume, tq = taker-buy quote volume (aggressive buyers), used for money flow. */
 function kline(k) { return { t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], q: +k[7], tq: +k[10] }; }
 /* Older candles for the chart (before time `before`). */
-async function fetchKlinesBefore(symbol, interval, before, limit) {
-  const j = await jget("/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&endTime=" + before + "&limit=" + (limit || 500));
+async function fetchKlinesBefore(symbol, interval, before, limit, market) {
+  const j = await jgetM("/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&endTime=" + before + "&limit=" + (limit || 500), market);
   return Array.isArray(j) ? j.map(kline) : [];
 }
 function resetCaches(A) {
   ["_obAll", "_kl", "_lc", "_tlall"].forEach(k => { delete A[k]; });
   TFS.forEach(t => { if (A[t.id]) delete A[t.id]._tlob; });
 }
-async function fetchKlines(symbol, interval) {
-  let lastErr;
-  for (const host of HOSTS) {
+async function fetchKlines(symbol, interval, market) {
+  let lastErr; const fut = mkt(market) === "futures";
+  for (const host of (fut ? FHOSTS : HOSTS)) {
     try {
       const ctl = new AbortController();
       const to = setTimeout(() => ctl.abort(), 9000);
-      const r = await fetch(host + "/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&limit=300", { signal: ctl.signal });
+      const r = await fetch(host + (fut ? "/fapi/v1/klines" : "/api/v3/klines") + "?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&limit=300", { signal: ctl.signal });
       clearTimeout(to);
       if (!r.ok) throw new Error("HTTP " + r.status);
       const j = await r.json();
@@ -1362,15 +1373,15 @@ async function fetchKlines(symbol, interval) {
   throw lastErr;
 }
 /* Five timeframes per coin. The daily one is background only. A short cache lets page changes feel instant. */
-async function fetchAll(pair, useCache) {
-  let raw = null;
+async function fetchAll(pair, useCache, market) {
+  let raw = null; const mk = mkt(market);
   if (useCache) {
-    try { const c = JSON.parse(store.get("kl", "null")); if (c && c.pair === pair && Date.now() - c.t < 25000) raw = c.raw; } catch (e) { /* ignore */ }
+    try { const c = JSON.parse(store.get("kl", "null")); if (c && c.pair === pair && c.mk === mk && Date.now() - c.t < 25000) raw = c.raw; } catch (e) { /* ignore */ }
   }
   if (!raw) {
-    const res = await Promise.all(TFS.map(t => fetchKlines(pair, t.id)));
+    const res = await Promise.all(TFS.map(t => fetchKlines(pair, t.id, mk)));
     raw = {}; TFS.forEach((t, i) => { raw[t.id] = res[i]; });
-    if (useCache) store.set("kl", JSON.stringify({ pair, t: Date.now(), raw }));
+    if (useCache) store.set("kl", JSON.stringify({ pair, mk, t: Date.now(), raw }));
   }
   const A = {}; TFS.forEach(t => { A[t.id] = analyze(raw[t.id], t); });
   return A;
@@ -1399,6 +1410,9 @@ function normalizePair(raw) {
 /* Every Binance USDT spot token with real trading volume (no market-cap filter). Sorted by 24h USDT volume. */
 const MIN_VOL = 300000;
 async function loadUniverse() {
+  await loadUniverseS(); await loadUniverseF();
+}
+async function loadUniverseS() {
   const setU = (list, verified, msg) => {
     state.uni = { list, map: Object.fromEntries(list.map(c => [c.pair, c])), verified };
     state.capMsg = msg;
@@ -1420,28 +1434,45 @@ async function loadUniverse() {
       "Could not load the token list (" + (e && e.message ? e.message : "network error") + "). Using a built-in list of 30 large coins. Reload to try again.");
   }
 }
+const uniOf = m => mkt(m) === "futures" ? state.uniF : state.uni;
+/* USDT-M perpetual futures tokens (no delivery contracts), sorted by 24h USDT volume. Failure is not fatal: futures just stays empty. */
+async function loadUniverseF() {
+  const setF = list => { state.uniF = { list, map: Object.fromEntries(list.map(c => [c.pair, c])), verified: list.length > 10 }; };
+  try {
+    const cached = JSON.parse(store.get("uniF1", "null"));
+    if (cached && Date.now() - cached.t < 10 * 60000 && cached.list.length > 20) { setF(cached.list); return; }
+  } catch (e) { /* ignore */ }
+  try {
+    const all = await jget("/fapi/v1/ticker/24hr", FHOSTS);
+    const list = all.filter(t => /USDT$/.test(t.symbol) && +t.quoteVolume >= MIN_VOL).map(t => ({ sym: t.symbol.slice(0, -4), pair: t.symbol, name: t.symbol.slice(0, -4), mc: null, vol: +t.quoteVolume, chg: +t.priceChangePercent, last: +t.lastPrice, mk: "futures" }))
+      .filter(c => !STABLE.has(c.sym) && c.sym.length >= 2).sort((x, y) => y.vol - x.vol);
+    list.forEach((c, i) => { c.rank = i + 1; });
+    if (list.length < 10) throw new Error("Too few futures tokens");
+    store.set("uniF1", JSON.stringify({ t: Date.now(), list })); setF(list);
+  } catch (e) { setF([]); state.futMsg = "Futures list could not be loaded (" + (e && e.message ? e.message : "network error") + "). Binance futures can be blocked in some countries or networks."; }
+}
 /* Loads candles for state.symbol, runs the full analysis and builds the signal. Returns false if the coin is not allowed. */
 async function loadSymbol() {
-  const pair = normalizePair(state.symbol);
-  if (state.uni.verified && !state.uni.map[pair]) {
-    showBanner(coinOf(pair) + " has no active USDT pair on Binance with enough volume. Pick a token from the list.");
+  const pair = normalizePair(state.symbol), U = uniOf(state.market);
+  if (U.verified && !U.map[pair]) {
+    showBanner(coinOf(pair) + " has no active USDT " + mkLabel() + " pair on Binance with enough volume. Pick a token from the list.");
     return false;
   }
-  state.symbol = pair; store.set("symbol", pair);
+  state.symbol = pair; store.set("symbol", pair); store.set("market", state.market);
   /* Real Binance data only. Three tries, no made-up candles. */
   let lastErr = null;
   for (let k = 0; k < 3; k++) {
-    try { state.A = await fetchAll(pair, k === 0); state.Apair = pair; state.demo = false; showBanner(""); lastErr = null; break; }
+    try { state.A = await fetchAll(pair, k === 0, state.market); state.Apair = pair; state.Amkt = state.market; state.demo = false; showBanner(""); lastErr = null; break; }
     catch (e) { lastErr = e; await sleep(900 * (k + 1)); }
   }
   if (lastErr) {
-    if (state.Apair !== pair) state.A = null;
+    if (state.Apair !== pair || state.Amkt !== state.market) state.A = null;
     showBanner("Could not load real candles for " + pair + " from Binance (" + (lastErr && lastErr.message ? lastErr.message : "network error") + "). No fake data is shown. Check the pair name and your internet connection, then press Analyze again.");
     return false;
   }
   state.sig = buildSignal(state.A);
   state.sessStats = sessionStats(state.A["1h"].candles);
-  if (state.liveHook) liveStart(pair);
+  if (state.liveHook) liveStart(pair, state.market);
   return true;
 }
 
@@ -2134,7 +2165,8 @@ function checkSessionOpens() {
 "use strict";
 /* Live link to Binance. Candles and price update by themselves through Binance's public WebSocket (no keys).
    If the WebSocket is blocked or keeps failing, the app falls back to asking Binance for the latest candles every few seconds. */
-const LIVE = { ws: null, pair: null, mode: "off", tries: 0, timer: null, poll: null, dirty: {}, lastMsg: 0, lastHook: 0, hookMs: 1000, retry: null };
+const LIVE = { ws: null, pair: null, mk: "spot", mode: "off", tries: 0, timer: null, poll: null, dirty: {}, lastMsg: 0, lastHook: 0, hookMs: 1000, retry: null };
+const WS_FHOSTS = ["wss://fstream.binance.com/stream?streams="];
 const WS_HOSTS = ["wss://stream.binance.com:9443/stream?streams=", "wss://data-stream.binance.vision/stream?streams="];
 
 function liveBadge() {
@@ -2180,7 +2212,7 @@ function liveConnect() {
   if (!LIVE.pair || state.demo || typeof WebSocket === "undefined") { liveFallback(); return; }
   const streams = TFS.map(t => LIVE.pair.toLowerCase() + "@kline_" + t.id).join("/");
   let ws; LIVE.mode = "connecting"; liveBadge();
-  try { ws = new WebSocket(WS_HOSTS[LIVE.tries % WS_HOSTS.length] + streams); } catch (e) { liveFallback(); return; }
+  try { ws = new WebSocket((LIVE.mk === "futures" ? WS_FHOSTS : WS_HOSTS)[LIVE.tries % (LIVE.mk === "futures" ? WS_FHOSTS : WS_HOSTS).length] + streams); } catch (e) { liveFallback(); return; }
   LIVE.ws = ws; const pair = LIVE.pair; let opened = false;
   ws.onopen = () => { opened = true; LIVE.mode = "live"; LIVE.tries = 0; LIVE.lastMsg = Date.now(); stopPoll(); liveBadge(); };
   ws.onmessage = wsMsg;
@@ -2200,16 +2232,17 @@ function liveFallback() {
   const pair = LIVE.pair, run = async () => {
     if (document.hidden || LIVE.pair !== pair) return;
     for (const t of TFS) {
-      try { const j = await jget("/api/v3/klines?symbol=" + encodeURIComponent(pair) + "&interval=" + t.id + "&limit=2"); j.map(kline).forEach(c => liveApply(t.id, c)); } catch (e) { /* try next time */ }
+      try { const j = await jgetM("/api/v3/klines?symbol=" + encodeURIComponent(pair) + "&interval=" + t.id + "&limit=2", LIVE.mk); j.map(kline).forEach(c => liveApply(t.id, c)); } catch (e) { /* try next time */ }
     }
   };
   run(); LIVE.poll = setInterval(run, 8000);
 }
 /* called after every successful candle load */
-function liveStart(pair) {
+function liveStart(pair, market) {
+  const mk = mkt(market);
   if (state.demo) { liveStop(); LIVE.pair = null; LIVE.mode = "off"; liveBadge(); return; }
-  if (LIVE.pair === pair && (LIVE.mode === "live" || LIVE.mode === "poll" || LIVE.mode === "connecting")) return;
-  liveStop(); LIVE.pair = pair; LIVE.tries = 0; liveConnect();
+  if (LIVE.pair === pair && LIVE.mk === mk && (LIVE.mode === "live" || LIVE.mode === "poll" || LIVE.mode === "connecting")) return;
+  liveStop(); LIVE.pair = pair; LIVE.mk = mk; LIVE.tries = 0; liveConnect();
   if (!LIVE.timer) LIVE.timer = setInterval(liveTick, 1000);
 }
 function liveStop() {
@@ -2231,7 +2264,7 @@ function buildShell(cfg) {
   const nav = NAV.map(([href, label]) => '<a href="' + href + '"' + (href === cfg.file ? ' aria-current="page"' : '') + '>' + label + '</a>').join("");
   $("app").innerHTML = '<div class="wrap">' +
     '<header class="top"><div><h1>Crypto Trend Desk <span id="liveBadge" class="pill mute" style="font-size:11px;vertical-align:middle"></span></h1><div class="sub" style="margin:0">Live scalping and intraday desk for all Binance USDT tokens</div></div>' +
-    (cfg.symbolBox ? '<div class="controls"><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
+    (cfg.symbolBox ? '<div class="controls"><select id="mkSel" aria-label="Market" title="Spot or USDT-M futures"><option value="spot">Spot</option><option value="futures">Futures</option></select><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
       '<button id="go" class="primary">Analyze</button><label class="chk"><input type="checkbox" id="auto"> Refresh every minute</label></div>' : '') +
     '</header><nav class="nav" aria-label="Pages">' + nav + '</nav><div id="banner" class="banner" hidden></div><div id="capNote" class="sub" style="margin:0"></div>' +
     '<main id="main" style="display:flex;flex-direction:column;gap:16px"></main>' +
@@ -2239,10 +2272,17 @@ function buildShell(cfg) {
 }
 function fillSymList() {
   const dl = $("symlist"); if (!dl) return;
-  dl.innerHTML = state.uni.list.slice(0, 400).map(c => '<option value="' + c.pair + '" label="' + esc(c.name) + (c.vol ? " vol " + fmtCap(c.vol) : "") + '"></option>').join("");
+  dl.innerHTML = uniOf(state.market).list.slice(0, 400).map(c => '<option value="' + c.pair + '" label="' + esc(c.name) + (c.vol ? " vol " + fmtCap(c.vol) : "") + '"></option>').join("");
 }
 let autoTimer = null;
+function setMarket(m, keep) {
+  state.market = mkt(m); store.set("market", state.market); const sel = $("mkSel"); if (sel) sel.value = state.market;
+  fillSymList(); const U = uniOf(state.market);
+  if (!keep && U.verified && !U.map[normalizePair($("sym") ? $("sym").value : state.symbol)]) { state.symbol = "BTCUSDT"; if ($("sym")) $("sym").value = state.symbol; }
+}
 function wireSymbolBox(cfg) {
+  $("mkSel").value = state.market;
+  $("mkSel").addEventListener("change", async e => { setMarket(e.target.value); $("go").click(); });
   const go = async () => {
     state.symbol = normalizePair($("sym").value); $("sym").value = state.symbol;
     $("go").disabled = true; $("go").textContent = "Loading...";
@@ -2264,14 +2304,17 @@ function startTick() {
 async function boot(cfg) {
   document.title = cfg.title + " | Crypto Trend Desk";
   buildShell(cfg);
-  state.symbol = store.get("symbol", "BTCUSDT"); state.chartTf = store.get("chartTf", "15m");
+  state.symbol = store.get("symbol", "BTCUSDT"); state.market = mkt(store.get("market", "spot")); state.chartTf = store.get("chartTf", "15m");
   if (!SHOWN.some(t => t.id === state.chartTf)) state.chartTf = "15m";
   if (cfg.symbolBox) $("sym").value = state.symbol;
   if (cfg.live) state.liveHook = cfg.onLive || (() => {});
   SESSIONS.forEach(s => { state.prevAct[s.id] = sessionActive(s, Date.now()); });
   if (cfg.data) {
     $("main").innerHTML = '<div class="card sub">Loading coin list and candles...</div>';
-    await loadUniverse(); fillSymList(); $("capNote").textContent = state.capMsg || "";
+    await loadUniverse();
+    if (state.market === "futures" && !state.uniF.list.length) state.market = "spot";
+    if (state.market === "futures" && state.uniF.verified && !state.uniF.map[normalizePair(state.symbol)]) state.symbol = "BTCUSDT";
+    fillSymList(); $("capNote").textContent = (state.capMsg || "") + (state.uniF.list.length ? " Futures: " + state.uniF.list.length + " USDT perpetual tokens." : (state.futMsg ? " " + state.futMsg : ""));
     if (cfg.symbolBox) wireSymbolBox(cfg);
     await loadSymbol();
   }
@@ -2301,7 +2344,7 @@ function exchangeUrl(ex, pair, market) {
 }
 function orderText(s, pair) {
   if (!s || !s.zone || s.sl == null) return "No active entry zone for " + pair + " right now.";
-  return pair + " " + (s.L ? "LONG" : "SHORT") + " (" + s.verdict + ")\nTimeframe: " + (s.tfLabel || "") + "\nEntry: " + fp(s.price) + "\nStop loss: " + fp(s.sl) + "\nTarget 1: " + fp(s.tp1) + "\nTarget 2: " + fp(s.tp2) + "\nTarget 3: " + fp(s.tp3);
+  return pair + " " + mkLabel() + " " + vtxt(s.L ? "LONG" : "SHORT") + " (" + vtxt(s.verdict) + ")\nTimeframe: " + (s.tfLabel || "") + "\nEntry: " + fp(s.price) + "\nStop loss: " + fp(s.sl) + "\nTarget 1: " + fp(s.tp1) + "\nTarget 2: " + fp(s.tp2) + "\nTarget 3: " + fp(s.tp3);
 }
 function renderExchange(id) {
   const el = $(id); if (!el) return;
@@ -2317,6 +2360,43 @@ function renderExchange(id) {
     try { await navigator.clipboard.writeText(txt); $("exMsg").textContent = "Copied."; } catch (e) { $("exMsg").textContent = txt.replace(/\n/g, " | "); }
   });
 }
+
+</script>
+<script>
+"use strict";
+/* Spoken alert. When a confirmed signal appears, the browser says it aloud: what to do (buy / sell / long / short), on which coin and market,
+   why (the checks that passed and the entry zone), and the entry, stop and target. Uses the phone or computer's own speech engine, no internet needed.
+   Browsers only allow speech after the person has touched the page once, so tap anywhere on the page after opening it. */
+const VOICE = { on: store.get("voice", "1") === "1", lang: store.get("voiceLang", "en") };
+function voiceSetOn(v) { VOICE.on = !!v; store.set("voice", v ? "1" : "0"); if (!v) try { speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
+function say(text) {
+  if (!VOICE.on || !("speechSynthesis" in window)) return false;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text); u.rate = 0.95; u.pitch = 1; u.volume = 1;
+    const vs = speechSynthesis.getVoices(), want = VOICE.lang === "hi" ? ["hi-IN", "ur-PK", "hi"] : ["en-US", "en-GB", "en"];
+    const v = want.map(l => vs.find(x => x.lang === l || x.lang.startsWith(l + "-") || x.lang.indexOf(l) === 0)).find(Boolean);
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = want[0];
+    speechSynthesis.speak(u); return true;
+  } catch (e) { return false; }
+}
+function spokenNum(x) { return String(+(+x).toPrecision(5)); }
+/* The sentence. sg is the signal from buildSignal, pair is the symbol, market is "spot" or "futures". */
+function signalSpeech(sg, pair, market) {
+  const spot = mkt(market) === "spot", coin = coinOf(pair), L = sg.L, z = sg.zone, hi = VOICE.lang === "hi";
+  const act = spot ? (L ? "Buy" : "Sell") : (L ? "Long" : "Short");
+  const why = (sg.checks || []).filter(c => c.ok).slice(0, 4).map(c => String(c.label).replace(/[()]/g, "").replace(/\s+/g, " ")).join(", ");
+  const tf = (sg.trigTfs && sg.trigTfs[0]) || (z && z.confTf) || "";
+  const tfs = { "5m": "5 minute", "15m": "15 minute", "1h": "1 hour", "4h": "4 hour" }[tf] || tf;
+  if (hi) {
+    return act + " signal confirm ho gaya. " + coin + ", " + (spot ? "spot" : "futures") + " market. " + (z ? "Wajah: " + z.type + " par " + tfs + " ki confirmation candle bani. " : "Wajah: " + tfs + " ki confirmation candle bani. ") +
+      (spot && !L ? "Spot par short nahi hota, agar coin aapke paas hai to yahan se bech dein. " : "Yahan se " + (L ? "buy" : "sell") + " karna hai. ") + "Entry " + spokenNum(sg.price) + ", stop " + spokenNum(sg.sl) + ", target " + spokenNum(sg.tp1) + ".";
+  }
+  return act + " signal confirmed. " + coin + ", " + (spot ? "spot" : "futures") + " market. " +
+    (z ? "Reason: " + (tfs ? tfs + " confirmation candle formed at the " + z.type.toLowerCase() + ". " : "") : (tfs ? "Reason: " + tfs + " confirmation candle formed. " : "")) + (why ? "Checks passed: " + why + ". " : "") +
+    (spot && !L ? "Spot has no short, so sell here only if you hold the coin. " : (L ? "Buy" : "Sell") + " here. ") + "Entry " + spokenNum(sg.price) + ", stop loss " + spokenNum(sg.sl) + ", target one " + spokenNum(sg.tp1) + ".";
+}
+try { speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => {}; } catch (e) { /* ignore */ }
 
 </script>
 <script>
@@ -2575,7 +2655,7 @@ const CHART_SKELETON =
   '<section class="card"><div class="status-row"><h2 style="margin:0">Chart · <span id="chartSym"></span></h2><div id="chartInfo" class="sub" style="margin:0"></div></div>' +
   '<div class="status-row"><div class="tabs" id="tfTabs" role="group" aria-label="Chart timeframe"></div><div class="controls" id="toggles"></div></div>' +
   '<div id="indHost"></div><div id="confBanner" class="confbanner" hidden role="status"></div>' +
-  '<div class="controls" id="viewBtns" style="margin:6px 0"><button id="vOlder">← Older</button><button id="vNewer">Newer →</button><button id="vIn">Zoom in +</button><button id="vOut">Zoom out −</button><button id="vUp">Price ▲</button><button id="vDown">Price ▼</button><button id="vTall">Stretch +</button><button id="vShort">Stretch −</button><button id="vFit">Auto fit</button><button id="vFree" aria-pressed="false"></button><button id="vLatest">Latest ⏭</button><button id="vMode" class="primary"></button></div>' +
+  '<div class="controls" id="viewBtns" style="margin:6px 0"><button id="vOlder">← Older</button><button id="vNewer">Newer →</button><button id="vIn">Zoom in +</button><button id="vOut">Zoom out −</button><button id="vUp">Price ▲</button><button id="vDown">Price ▼</button><button id="vTall">Stretch +</button><button id="vShort">Stretch −</button><button id="vFit">Auto fit</button><button id="vFree" aria-pressed="false"></button><button id="vVoice" aria-pressed="true"></button><select id="vVoiceLang" aria-label="Voice language"><option value="en">Voice: English</option><option value="hi">Voice: Hindi/Urdu style</option></select><button id="vVoiceTest">Test voice</button><button id="vLatest">Latest ⏭</button><button id="vMode" class="primary"></button></div>' +
   '<div class="sub" style="margin:0 0 4px">Move it like an exchange chart: drag to move through time (mouse: also up and down), mouse wheel or two-finger pinch to zoom time, drag or wheel on the price scale on the right to stretch the price, drag the time scale at the bottom to zoom time. On a phone turn Free move ON to drag in any direction. Arrow keys, + and − also work. Double-click the chart to reset, double-click the price scale for Auto fit.</div>' +
   '<div id="cvWrap" style="position:relative;touch-action:pan-y;cursor:grab;user-select:none"><canvas id="cv" height="620"></canvas><canvas id="cvx" style="position:absolute;left:0;top:0;pointer-events:none"></canvas></div><canvas id="cvr" height="110"></canvas>' +
   '<div class="legend"><span><i style="background:var(--ema20)"></i>EMA 20</span><span><i style="background:var(--ema50)"></i>EMA 50</span><span><i style="background:var(--ema200)"></i>EMA 200</span>' +
@@ -2610,7 +2690,7 @@ function drawChart() {
   const T = id => $(id) && $(id).checked && (!tlOnly || id === "tTl");
   const V = state.view || (state.view = { count: 130, off: 0, ys: 1, yc: 0 }); if (V.ys == null) { V.ys = 1; V.yc = 0; }
   const n = a.candles.length, end = n - 2, N = clamp(Math.round(V.count), 20, 400);
-  V.count = N; V.off = clamp(V.off, -Math.floor(N * 0.4), Math.max(0, n - 12));
+  V.count = N; V.off = clamp(V.off, -Math.floor(N * 0.9), Math.max(0, n - 8));
   const r = n - V.off, sv = r - N, s0 = Math.max(0, sv), cs = a.candles.slice(s0, Math.min(r, n));
   if (!cs.length) return;
   if (sv < 25) loadOlder(state.chartTf);
@@ -2636,7 +2716,7 @@ function drawChart() {
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, plotW, P.h); ctx.clip();
   const maxV = Math.max(...cs.map(k => k.v)) || 1;
   cs.forEach((k, j) => {
-    const col = k.c >= k.o ? cUp : cDown; ctx.fillStyle = col; ctx.strokeStyle = col;
+    const col = k.c >= k.o ? cUp : cDown; ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = state.moving ? 2.6 : 1.7;
     ctx.beginPath(); ctx.moveTo(Math.round(x(j)) + 0.5, y(k.h)); ctx.lineTo(Math.round(x(j)) + 0.5, y(k.l)); ctx.stroke();
     ctx.fillRect(x(j) - cw / 2, y(Math.max(k.o, k.c)), cw, Math.max(1, Math.abs(y(k.o) - y(k.c))));
   });
@@ -2814,8 +2894,8 @@ function drawChart() {
   ctx.restore();
   state.proSum = drawPro(ctx, { a, xi, y, lo, hi, plotW, padT, priceH, s0, sv, N, cUp, cDown, cSurf, cTxt, tag: tagText, mono, colW });
   const price = a.candles[n - 1].c;
-  ctx.strokeStyle = cTxt; ctx.setLineDash([3, 3]); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, y(price)); ctx.lineTo(plotW, y(price)); ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillStyle = cFg; ctx.textAlign = "left"; ctx.fillText(fp(price), plotW + 6, y(price) - 4);
+  ctx.strokeStyle = cFg; ctx.setLineDash(state.moving ? [] : [6, 3]); ctx.lineWidth = state.moving ? 3.2 : 2.2; ctx.beginPath(); ctx.moveTo(0, Math.round(y(price)) + 0.5); ctx.lineTo(plotW, Math.round(y(price)) + 0.5); ctx.stroke(); ctx.setLineDash([]);
+  { const lab = fp(price), w = ctx.measureText(lab).width + 10; ctx.fillStyle = cFg; ctx.fillRect(plotW + 1, y(price) - 10, w + 4, 20); ctx.fillStyle = cSurf; ctx.font = "bold 12px " + mono; ctx.textAlign = "left"; ctx.fillText(lab, plotW + 6, y(price) + 4); ctx.font = "11px " + mono; }
   ctx.fillStyle = cTxt; ctx.textAlign = "center";
   [0.1, 0.35, 0.6, 0.85].forEach(f => {
     const j = Math.min(cs.length - 1, Math.floor(f * cs.length)), d = new Date(cs[j].t);
@@ -2850,7 +2930,7 @@ function drawChart() {
   (state.proSum || []).forEach(t => chips.unshift('<span class="chip n">' + esc(t) + '</span>'));
   $("srList").innerHTML = chips.join("");
 }
-function renderChartPage() { checkConfirm(); $("chartSym").textContent = state.symbol + (state.demo ? " (demo data)" : ""); chartTabs(); setModeBtn(); drawChart(); }
+function renderChartPage() { checkConfirm(); $("chartSym").textContent = state.symbol + " · " + mkLabel() + (state.demo ? " (demo data)" : ""); chartTabs(); setModeBtn(); drawChart(); }
 function setModeBtn() { const b = $("vMode"); if (b) b.textContent = store.get("tlOnly", "1") === "1" ? "Trendline view (tap for all overlays)" : "All overlays (tap for trendline view)"; }
 let rafT = 0; function redraw() { if (rafT) return; rafT = requestAnimationFrame(() => { rafT = 0; drawChart(); }); }
 
@@ -2880,7 +2960,7 @@ function drawCross() {
   if (!c || c.x < 0 || c.x > vg.plotW || c.y < vg.padT || c.y > vg.padT + vg.priceH) return;
   const mono = css("--font-mono"), fg = css("--fg"), surf = css("--surface"), txt = css("--muted"); ctx.font = "11px " + mono;
   const idx = Math.floor(vg.sv + c.x / vg.plotW * vg.N), price = vg.hi - (c.y - vg.padT) / vg.priceH * (vg.hi - vg.lo), k = vg.a.candles[idx];
-  ctx.strokeStyle = txt; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+  ctx.strokeStyle = fg; ctx.setLineDash(state.moving ? [] : [5, 3]); ctx.lineWidth = state.moving ? 2.6 : 1.8;
   ctx.beginPath(); ctx.moveTo(c.x, vg.padT); ctx.lineTo(c.x, vg.padT + vg.priceH); ctx.moveTo(0, c.y); ctx.lineTo(vg.plotW, c.y); ctx.stroke(); ctx.setLineDash([]);
   tagText(ctx, fp(price), vg.W - 2, c.y + 4, surf, fg, "right");
   if (k) {
@@ -2895,10 +2975,10 @@ function setupMove() {
   const applyFree = () => { w.style.touchAction = free() ? "none" : "pan-y"; const b = $("vFree"); if (b) { b.setAttribute("aria-pressed", free()); b.textContent = free() ? "Free move: ON (drag any way)" : "Free move: OFF (tap to turn on)"; } };
   const rel = e => { const b = w.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
   const region = e => { const vg = state.vg, r = rel(e); if (!vg) return "plot"; return r.x > vg.plotW ? "axisY" : r.y > vg.padT + vg.priceH ? "axisX" : "plot"; };
-  const stopFling = () => { if (fling) { cancelAnimationFrame(fling); fling = 0; } };
+  const stopFling = () => { if (fling) { cancelAnimationFrame(fling); fling = 0; state.moving = false; } };
   const runFling = vx => {
     stopFling(); let last = performance.now();
-    const f = now => { const dt = now - last; last = now; const vg = state.vg; if (!vg) return; V().off += vx * dt / (vg.plotW / vg.N); vx *= Math.pow(0.94, dt / 16); redraw(); if (Math.abs(vx) > 0.02) fling = requestAnimationFrame(f); else fling = 0; };
+    state.moving = true; const f = now => { const dt = now - last; last = now; const vg = state.vg; if (!vg) return; V().off += vx * 1.6 * dt / (vg.plotW / vg.N); vx *= Math.pow(0.95, dt / 16); redraw(); if (Math.abs(vx) > 0.02) fling = requestAnimationFrame(f); else { fling = 0; state.moving = false; redraw(); } };
     fling = requestAnimationFrame(f);
   };
   w.addEventListener("pointerdown", e => {
@@ -2917,8 +2997,8 @@ function setupMove() {
       if (drag.reg === "axisY") { v.ys = clamp(drag.ys * Math.exp(dy * 0.006), 0.08, 12); }
       else if (drag.reg === "axisX") { zoomAt(clamp(drag.px / vg.plotW, 0, 1), drag.n * Math.exp(-dx * 0.006)); }
       else {
-        v.off = drag.off + Math.round(dx / (vg.plotW / vg.N));
-        if (free() || e.pointerType === "mouse") v.yc = drag.yc + dy / vg.priceH * drag.ys;
+        v.off = drag.off + Math.round(dx * 1.35 / (vg.plotW / vg.N)); state.moving = true;
+        if (free() || e.pointerType === "mouse") v.yc = drag.yc + dy * 1.35 / vg.priceH * drag.ys;
       }
       hist.push({ t: e.timeStamp, x: e.clientX }); if (hist.length > 6) hist.shift(); redraw();
     }
@@ -2929,8 +3009,8 @@ function setupMove() {
     const was = drag; ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null;
     if (ptrs.size === 1) { const [p] = [...ptrs.values()]; drag = { x: p.x, y: p.y, off: V().off, yc: V().yc, ys: V().ys, n: V().count, reg: "plot", px: 0 }; }
     if (!ptrs.size) {
-      drag = null; w.style.cursor = "grab";
-      if (was && was.reg === "plot" && hist.length > 1) { const a = hist[0], b = hist[hist.length - 1], dt = b.t - a.t; if (dt > 0 && dt < 120) { const vx = (b.x - a.x) / dt; if (Math.abs(vx) > 0.25) runFling(vx); } }
+      drag = null; w.style.cursor = "grab"; if (!fling) { state.moving = false; redraw(); }
+      if (was && was.reg === "plot" && hist.length > 1) { const a = hist[0], b = hist[hist.length - 1], dt = b.t - a.t; if (dt > 0 && dt < 120) { const vx = (b.x - a.x) / dt; if (Math.abs(vx) > 0.25) runFling(vx); } if (!fling) { state.moving = false; redraw(); } }
       if (e.pointerType !== "mouse") { state.cross = null; drawCross(); }
     }
   };
@@ -2964,6 +3044,11 @@ function setupMove() {
   $("vLatest").addEventListener("click", () => { V().off = 0; redraw(); });
   $("vMode").addEventListener("click", () => { store.set("tlOnly", store.get("tlOnly", "1") === "1" ? "0" : "1"); setModeBtn(); redraw(); });
   applyFree();
+  const vv = () => { const b = $("vVoice"); b.setAttribute("aria-pressed", VOICE.on); b.textContent = VOICE.on ? "Voice alert: ON" : "Voice alert: OFF"; };
+  $("vVoice").addEventListener("click", () => { voiceSetOn(!VOICE.on); vv(); if (VOICE.on) say("Voice alert is on."); });
+  $("vVoiceLang").value = VOICE.lang; $("vVoiceLang").addEventListener("change", e => { VOICE.lang = e.target.value; store.set("voiceLang", VOICE.lang); });
+  $("vVoiceTest").addEventListener("click", () => { const was = VOICE.on; VOICE.on = true; const sg = state.sig || { L: true, price: 100, sl: 99, tp1: 102, checks: [{ ok: true, label: "Trend agrees" }] }; say(signalSpeech(Object.assign({}, sg, { L: sg.L, sl: sg.sl || sg.price * 0.99, tp1: sg.tp1 || sg.price * 1.01, checks: sg.checks || [] }), state.symbol, state.market)); VOICE.on = was; });
+  vv();
 }
 let rzT; window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(drawChart, 120); });
 try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(drawChart, 50)); } catch (e) { /* ignore */ }
@@ -2973,7 +3058,7 @@ const CONF = { key: null, until: 0, ev: null, loop: 0 };
 function confirmEvent(sg) {
   if (!sg || !/SETUP$/.test(sg.verdict)) return null;
   const z = sg.zone, tf = (sg.trigTfs && sg.trigTfs[0]) || (z && z.confTf) || "5m";
-  return { key: state.symbol + (sg.L ? "L" : "S") + (z ? z.type + Math.round(z.lo * 1000) : ""), dir: sg.L ? "LONG" : "SHORT", tf, price: sg.price, zone: z ? z.type : "" };
+  return { key: state.symbol + state.market + (sg.L ? "L" : "S") + (z ? z.type + Math.round(z.lo * 1000) : ""), dir: sg.L ? "LONG" : "SHORT", mk: state.market, tf, price: sg.price, zone: z ? z.type : "" };
 }
 function beep() { try { const AC = window.AudioContext || window.webkitAudioContext, c = new AC(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = 0.15; o.start(); o.stop(c.currentTime + 0.35); } catch (e) { /* sound not allowed yet */ } try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { /* ignore */ } }
 function blinkOn() { return Date.now() < CONF.until && CONF.ev; }
@@ -2981,20 +3066,21 @@ function updateBanner() {
   const el = $("confBanner"); if (!el) return;
   if (!blinkOn()) { el.hidden = true; return; }
   const e = CONF.ev; el.hidden = false; el.className = "confbanner " + (e.dir === "LONG" ? "up" : "down");
-  el.textContent = "● " + e.dir + " confirmation candle formed on " + tfl(e.tf) + (e.zone ? " at the " + e.zone.toLowerCase() : "") + " · price " + fp(state.sig.price) + " · tap to dismiss";
+  el.textContent = "● " + vtxt(e.dir, e.mk) + " " + mkLabel(e.mk) + " · confirmation candle formed on " + tfl(e.tf) + (e.zone ? " at the " + e.zone.toLowerCase() : "") + " · price " + fp(state.sig.price) + " · tap to dismiss";
+  if (e.say) el.title = e.say;
 }
 function blinkLoop() { CONF.loop = 0; if (!blinkOn()) { updateBanner(); drawCross(); return; } drawCross(); CONF.loop = requestAnimationFrame(blinkLoop); }
 function checkConfirm() {
   const e = confirmEvent(state.sig);
   if (!e) { CONF.key = null; if (CONF.until && Date.now() >= CONF.until) updateBanner(); return; }
-  if (e.key !== CONF.key) { CONF.key = e.key; CONF.ev = e; CONF.until = Date.now() + 120000; beep(); updateBanner(); if (!CONF.loop) CONF.loop = requestAnimationFrame(blinkLoop); }
+  if (e.key !== CONF.key) { CONF.key = e.key; CONF.ev = e; CONF.until = Date.now() + 120000; try { e.say = signalSpeech(state.sig, state.symbol, state.market); } catch (x) { e.say = ""; } beep(); setTimeout(() => say(e.say), 450); updateBanner(); if (!CONF.loop) CONF.loop = requestAnimationFrame(blinkLoop); }
 }
 function drawBlink(ctx, vg) {
   if (!blinkOn() || Math.floor(Date.now() / 450) % 2) return;
   const a = vg.a, i = a.candles.length - 2, k = a.candles[i]; if (!k) return;
   const x = (i - vg.sv + 0.5) / vg.N * vg.plotW, y = vg.padT + (vg.hi - (k.h + k.l) / 2) / (vg.hi - vg.lo) * vg.priceH, col = CONF.ev.dir === "LONG" ? css("--up") : css("--down");
   ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 16 + 4 * Math.sin(Date.now() / 120), 0, Math.PI * 2); ctx.stroke();
-  ctx.fillStyle = col; ctx.font = "bold 12px " + css("--font-mono"); ctx.textAlign = "center"; ctx.fillText(CONF.ev.dir + " CONFIRMED", Math.min(vg.plotW - 60, Math.max(60, x)), y - 26);
+  ctx.fillStyle = col; ctx.font = "bold 12px " + css("--font-mono"); ctx.textAlign = "center"; ctx.fillText(vtxt(CONF.ev.dir, CONF.ev.mk) + " CONFIRMED", Math.min(vg.plotW - 60, Math.max(60, x)), y - 26);
 }
 function liveChart() { const now = Date.now(); if (!state.lastSig || now - state.lastSig > 5000) { state.lastSig = now; try { state.sig = buildSignal(state.A); checkConfirm(); } catch (e) { /* keep the old signal */ } } redraw(); }
 boot({ file: "chart.html", title: "Chart", data: true, symbolBox: true, skeleton: CHART_SKELETON, render: renderChartPage, init: () => { setupToggles(); $("indHost").innerHTML = indPanelHtml(); indPanelWire(redraw); setupMove(); $("confBanner").addEventListener("click", () => { CONF.until = 0; updateBanner(); }); }, live: true, onLive: liveChart });

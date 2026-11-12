@@ -225,6 +225,9 @@ tr[data-pair]:hover td { background: var(--surface-2); }
 #cvWrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 #cvWrap canvas { border-radius: 12px; }
 @media (max-width: 640px) { .hero { grid-template-columns: 1fr 1fr; } .hero .h-main { grid-column: 1 / -1; } .hero .h-price { font-size: 30px; } .nav a { padding: 8px 11px; } }
+.pill.mk { font-size: 10px; padding: 1px 7px; letter-spacing: .06em; font-weight: 700; vertical-align: middle; border: 1px solid transparent; }
+.pill.mk.spot { background: color-mix(in srgb, var(--ema50) 18%, transparent); color: var(--ema50); border-color: color-mix(in srgb, var(--ema50) 45%, transparent); }
+.pill.mk.futures { background: color-mix(in srgb, var(--ema200) 18%, transparent); color: var(--ema200); border-color: color-mix(in srgb, var(--ema200) 45%, transparent); }
 
 </style>
 </head>
@@ -246,6 +249,7 @@ const TFS = [
 ];
 const SHOWN = TFS.filter(t => t.show);
 const WINDOWS = [50, 100]; // "last N candles" analysis windows
+const FHOSTS = ["https://fapi.binance.com", "https://fapi1.binance.com", "https://fapi2.binance.com", "https://fapi3.binance.com"];
 const HOSTS = ["https://api.binance.com", "https://data-api.binance.vision", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com"];
 const STABLE = new Set(["USDT","USDC","FDUSD","TUSD","DAI","USDE","PYUSD","USDP","BUSD","USD1","USDD","GUSD","EURC","EUR","AEUR","XUSD","RLUSD","BFUSD","USDS","WBTC","WBETH","STETH","WSTETH","WEETH","BETH","CBBTC"]);
 const FALLBACK = ["BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK","DOT","LTC","BCH","NEAR","UNI","ATOM","ETC","XLM","FIL","APT","ARB","OP","INJ","SUI","AAVE","HBAR","ICP","POL","TON","ALGO"];
@@ -257,7 +261,7 @@ const SESSIONS = [
 ];
 
 const state = {
-  symbol: "BTCUSDT", chartTf: "15m", A: {}, demo: false, sig: null,
+  symbol: "BTCUSDT", market: "spot", uniS: null, uniF: { list: [], map: {}, verified: false }, chartTf: "15m", A: {}, demo: false, sig: null,
   uni: { list: [], map: {}, verified: false }, scan: { rows: [], at: null, running: false },
   alerts: [], sessStats: [], prevAct: {}, news: { us: null, world: null, crypto: null }
 };
@@ -377,9 +381,16 @@ function trendOf(a) {
 /* Market data: Binance candles and the Binance token list (all USDT tokens). */
 const CG = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false&page=";
 
-async function jget(path) {
+/* Market aware request: "spot" uses /api/v3 on the spot hosts, "futures" uses the same call under /fapi/v1 on the USDT-M futures hosts. */
+const mkt = m => (m || state.market) === "futures" ? "futures" : "spot";
+const mkLabel = m => mkt(m) === "futures" ? "FUTURES" : "SPOT";
+/* On spot there is no short: LONG reads BUY and SHORT reads SELL (exit what you hold). On futures it stays LONG / SHORT. */
+const vtxt = (v, m) => mkt(m) === "spot" ? String(v).replace("LONG", "BUY").replace("SHORT", "SELL") : String(v);
+const mkBadge = m => '<span class="pill mk ' + mkt(m) + '" title="' + (mkt(m) === "futures" ? "USDT-M perpetual futures: you can go long or short" : "Spot market: you can only buy, or sell what you already hold") + '">' + mkLabel(m) + '</span>';
+async function jgetM(path, m) { return mkt(m) === "futures" ? jget(path.replace("/api/v3/", "/fapi/v1/"), FHOSTS) : jget(path); }
+async function jget(path, hosts) {
   let err;
-  for (const host of HOSTS) {
+  for (const host of (hosts || HOSTS)) {
     try { const r = await fetch(host + path); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); } catch (e) { err = e; }
   }
   throw err;
@@ -387,21 +398,21 @@ async function jget(path) {
 /* One Binance kline row. q = quote volume, tq = taker-buy quote volume (aggressive buyers), used for money flow. */
 function kline(k) { return { t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], q: +k[7], tq: +k[10] }; }
 /* Older candles for the chart (before time `before`). */
-async function fetchKlinesBefore(symbol, interval, before, limit) {
-  const j = await jget("/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&endTime=" + before + "&limit=" + (limit || 500));
+async function fetchKlinesBefore(symbol, interval, before, limit, market) {
+  const j = await jgetM("/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&endTime=" + before + "&limit=" + (limit || 500), market);
   return Array.isArray(j) ? j.map(kline) : [];
 }
 function resetCaches(A) {
   ["_obAll", "_kl", "_lc", "_tlall"].forEach(k => { delete A[k]; });
   TFS.forEach(t => { if (A[t.id]) delete A[t.id]._tlob; });
 }
-async function fetchKlines(symbol, interval) {
-  let lastErr;
-  for (const host of HOSTS) {
+async function fetchKlines(symbol, interval, market) {
+  let lastErr; const fut = mkt(market) === "futures";
+  for (const host of (fut ? FHOSTS : HOSTS)) {
     try {
       const ctl = new AbortController();
       const to = setTimeout(() => ctl.abort(), 9000);
-      const r = await fetch(host + "/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&limit=300", { signal: ctl.signal });
+      const r = await fetch(host + (fut ? "/fapi/v1/klines" : "/api/v3/klines") + "?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&limit=300", { signal: ctl.signal });
       clearTimeout(to);
       if (!r.ok) throw new Error("HTTP " + r.status);
       const j = await r.json();
@@ -412,15 +423,15 @@ async function fetchKlines(symbol, interval) {
   throw lastErr;
 }
 /* Five timeframes per coin. The daily one is background only. A short cache lets page changes feel instant. */
-async function fetchAll(pair, useCache) {
-  let raw = null;
+async function fetchAll(pair, useCache, market) {
+  let raw = null; const mk = mkt(market);
   if (useCache) {
-    try { const c = JSON.parse(store.get("kl", "null")); if (c && c.pair === pair && Date.now() - c.t < 25000) raw = c.raw; } catch (e) { /* ignore */ }
+    try { const c = JSON.parse(store.get("kl", "null")); if (c && c.pair === pair && c.mk === mk && Date.now() - c.t < 25000) raw = c.raw; } catch (e) { /* ignore */ }
   }
   if (!raw) {
-    const res = await Promise.all(TFS.map(t => fetchKlines(pair, t.id)));
+    const res = await Promise.all(TFS.map(t => fetchKlines(pair, t.id, mk)));
     raw = {}; TFS.forEach((t, i) => { raw[t.id] = res[i]; });
-    if (useCache) store.set("kl", JSON.stringify({ pair, t: Date.now(), raw }));
+    if (useCache) store.set("kl", JSON.stringify({ pair, mk, t: Date.now(), raw }));
   }
   const A = {}; TFS.forEach(t => { A[t.id] = analyze(raw[t.id], t); });
   return A;
@@ -449,6 +460,9 @@ function normalizePair(raw) {
 /* Every Binance USDT spot token with real trading volume (no market-cap filter). Sorted by 24h USDT volume. */
 const MIN_VOL = 300000;
 async function loadUniverse() {
+  await loadUniverseS(); await loadUniverseF();
+}
+async function loadUniverseS() {
   const setU = (list, verified, msg) => {
     state.uni = { list, map: Object.fromEntries(list.map(c => [c.pair, c])), verified };
     state.capMsg = msg;
@@ -470,28 +484,45 @@ async function loadUniverse() {
       "Could not load the token list (" + (e && e.message ? e.message : "network error") + "). Using a built-in list of 30 large coins. Reload to try again.");
   }
 }
+const uniOf = m => mkt(m) === "futures" ? state.uniF : state.uni;
+/* USDT-M perpetual futures tokens (no delivery contracts), sorted by 24h USDT volume. Failure is not fatal: futures just stays empty. */
+async function loadUniverseF() {
+  const setF = list => { state.uniF = { list, map: Object.fromEntries(list.map(c => [c.pair, c])), verified: list.length > 10 }; };
+  try {
+    const cached = JSON.parse(store.get("uniF1", "null"));
+    if (cached && Date.now() - cached.t < 10 * 60000 && cached.list.length > 20) { setF(cached.list); return; }
+  } catch (e) { /* ignore */ }
+  try {
+    const all = await jget("/fapi/v1/ticker/24hr", FHOSTS);
+    const list = all.filter(t => /USDT$/.test(t.symbol) && +t.quoteVolume >= MIN_VOL).map(t => ({ sym: t.symbol.slice(0, -4), pair: t.symbol, name: t.symbol.slice(0, -4), mc: null, vol: +t.quoteVolume, chg: +t.priceChangePercent, last: +t.lastPrice, mk: "futures" }))
+      .filter(c => !STABLE.has(c.sym) && c.sym.length >= 2).sort((x, y) => y.vol - x.vol);
+    list.forEach((c, i) => { c.rank = i + 1; });
+    if (list.length < 10) throw new Error("Too few futures tokens");
+    store.set("uniF1", JSON.stringify({ t: Date.now(), list })); setF(list);
+  } catch (e) { setF([]); state.futMsg = "Futures list could not be loaded (" + (e && e.message ? e.message : "network error") + "). Binance futures can be blocked in some countries or networks."; }
+}
 /* Loads candles for state.symbol, runs the full analysis and builds the signal. Returns false if the coin is not allowed. */
 async function loadSymbol() {
-  const pair = normalizePair(state.symbol);
-  if (state.uni.verified && !state.uni.map[pair]) {
-    showBanner(coinOf(pair) + " has no active USDT pair on Binance with enough volume. Pick a token from the list.");
+  const pair = normalizePair(state.symbol), U = uniOf(state.market);
+  if (U.verified && !U.map[pair]) {
+    showBanner(coinOf(pair) + " has no active USDT " + mkLabel() + " pair on Binance with enough volume. Pick a token from the list.");
     return false;
   }
-  state.symbol = pair; store.set("symbol", pair);
+  state.symbol = pair; store.set("symbol", pair); store.set("market", state.market);
   /* Real Binance data only. Three tries, no made-up candles. */
   let lastErr = null;
   for (let k = 0; k < 3; k++) {
-    try { state.A = await fetchAll(pair, k === 0); state.Apair = pair; state.demo = false; showBanner(""); lastErr = null; break; }
+    try { state.A = await fetchAll(pair, k === 0, state.market); state.Apair = pair; state.Amkt = state.market; state.demo = false; showBanner(""); lastErr = null; break; }
     catch (e) { lastErr = e; await sleep(900 * (k + 1)); }
   }
   if (lastErr) {
-    if (state.Apair !== pair) state.A = null;
+    if (state.Apair !== pair || state.Amkt !== state.market) state.A = null;
     showBanner("Could not load real candles for " + pair + " from Binance (" + (lastErr && lastErr.message ? lastErr.message : "network error") + "). No fake data is shown. Check the pair name and your internet connection, then press Analyze again.");
     return false;
   }
   state.sig = buildSignal(state.A);
   state.sessStats = sessionStats(state.A["1h"].candles);
-  if (state.liveHook) liveStart(pair);
+  if (state.liveHook) liveStart(pair, state.market);
   return true;
 }
 
@@ -587,7 +618,7 @@ function buildShell(cfg) {
   const nav = NAV.map(([href, label]) => '<a href="' + href + '"' + (href === cfg.file ? ' aria-current="page"' : '') + '>' + label + '</a>').join("");
   $("app").innerHTML = '<div class="wrap">' +
     '<header class="top"><div><h1>Crypto Trend Desk <span id="liveBadge" class="pill mute" style="font-size:11px;vertical-align:middle"></span></h1><div class="sub" style="margin:0">Live scalping and intraday desk for all Binance USDT tokens</div></div>' +
-    (cfg.symbolBox ? '<div class="controls"><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
+    (cfg.symbolBox ? '<div class="controls"><select id="mkSel" aria-label="Market" title="Spot or USDT-M futures"><option value="spot">Spot</option><option value="futures">Futures</option></select><input id="sym" list="symlist" value="BTCUSDT" aria-label="Trading pair" size="11" autocapitalize="characters" spellcheck="false"><datalist id="symlist"></datalist>' +
       '<button id="go" class="primary">Analyze</button><label class="chk"><input type="checkbox" id="auto"> Refresh every minute</label></div>' : '') +
     '</header><nav class="nav" aria-label="Pages">' + nav + '</nav><div id="banner" class="banner" hidden></div><div id="capNote" class="sub" style="margin:0"></div>' +
     '<main id="main" style="display:flex;flex-direction:column;gap:16px"></main>' +
@@ -595,10 +626,17 @@ function buildShell(cfg) {
 }
 function fillSymList() {
   const dl = $("symlist"); if (!dl) return;
-  dl.innerHTML = state.uni.list.slice(0, 400).map(c => '<option value="' + c.pair + '" label="' + esc(c.name) + (c.vol ? " vol " + fmtCap(c.vol) : "") + '"></option>').join("");
+  dl.innerHTML = uniOf(state.market).list.slice(0, 400).map(c => '<option value="' + c.pair + '" label="' + esc(c.name) + (c.vol ? " vol " + fmtCap(c.vol) : "") + '"></option>').join("");
 }
 let autoTimer = null;
+function setMarket(m, keep) {
+  state.market = mkt(m); store.set("market", state.market); const sel = $("mkSel"); if (sel) sel.value = state.market;
+  fillSymList(); const U = uniOf(state.market);
+  if (!keep && U.verified && !U.map[normalizePair($("sym") ? $("sym").value : state.symbol)]) { state.symbol = "BTCUSDT"; if ($("sym")) $("sym").value = state.symbol; }
+}
 function wireSymbolBox(cfg) {
+  $("mkSel").value = state.market;
+  $("mkSel").addEventListener("change", async e => { setMarket(e.target.value); $("go").click(); });
   const go = async () => {
     state.symbol = normalizePair($("sym").value); $("sym").value = state.symbol;
     $("go").disabled = true; $("go").textContent = "Loading...";
@@ -620,14 +658,17 @@ function startTick() {
 async function boot(cfg) {
   document.title = cfg.title + " | Crypto Trend Desk";
   buildShell(cfg);
-  state.symbol = store.get("symbol", "BTCUSDT"); state.chartTf = store.get("chartTf", "15m");
+  state.symbol = store.get("symbol", "BTCUSDT"); state.market = mkt(store.get("market", "spot")); state.chartTf = store.get("chartTf", "15m");
   if (!SHOWN.some(t => t.id === state.chartTf)) state.chartTf = "15m";
   if (cfg.symbolBox) $("sym").value = state.symbol;
   if (cfg.live) state.liveHook = cfg.onLive || (() => {});
   SESSIONS.forEach(s => { state.prevAct[s.id] = sessionActive(s, Date.now()); });
   if (cfg.data) {
     $("main").innerHTML = '<div class="card sub">Loading coin list and candles...</div>';
-    await loadUniverse(); fillSymList(); $("capNote").textContent = state.capMsg || "";
+    await loadUniverse();
+    if (state.market === "futures" && !state.uniF.list.length) state.market = "spot";
+    if (state.market === "futures" && state.uniF.verified && !state.uniF.map[normalizePair(state.symbol)]) state.symbol = "BTCUSDT";
+    fillSymList(); $("capNote").textContent = (state.capMsg || "") + (state.uniF.list.length ? " Futures: " + state.uniF.list.length + " USDT perpetual tokens." : (state.futMsg ? " " + state.futMsg : ""));
     if (cfg.symbolBox) wireSymbolBox(cfg);
     await loadSymbol();
   }
@@ -657,7 +698,7 @@ function exchangeUrl(ex, pair, market) {
 }
 function orderText(s, pair) {
   if (!s || !s.zone || s.sl == null) return "No active entry zone for " + pair + " right now.";
-  return pair + " " + (s.L ? "LONG" : "SHORT") + " (" + s.verdict + ")\nTimeframe: " + (s.tfLabel || "") + "\nEntry: " + fp(s.price) + "\nStop loss: " + fp(s.sl) + "\nTarget 1: " + fp(s.tp1) + "\nTarget 2: " + fp(s.tp2) + "\nTarget 3: " + fp(s.tp3);
+  return pair + " " + mkLabel() + " " + vtxt(s.L ? "LONG" : "SHORT") + " (" + vtxt(s.verdict) + ")\nTimeframe: " + (s.tfLabel || "") + "\nEntry: " + fp(s.price) + "\nStop loss: " + fp(s.sl) + "\nTarget 1: " + fp(s.tp1) + "\nTarget 2: " + fp(s.tp2) + "\nTarget 3: " + fp(s.tp3);
 }
 function renderExchange(id) {
   const el = $(id); if (!el) return;
